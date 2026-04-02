@@ -206,6 +206,10 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function isMissingProductError(error) {
+  return error instanceof Error && error.message === 'Produto nao encontrado.';
+}
+
 export default function App() {
   const [logoHasError, setLogoHasError] = useState(false);
   const [products, setProducts] = useState([]);
@@ -247,6 +251,33 @@ export default function App() {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   }
+
+  const syncProductsWithServer = async () => {
+    const serverProducts = await fetchProducts();
+    const normalizedProducts = serverProducts.map(normalizeProduct);
+    setProducts(normalizedProducts);
+    return normalizedProducts;
+  };
+
+  const handleMissingProduct = async (productId) => {
+    setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
+
+    if (selectedProductId === productId) {
+      closeProductModal();
+    }
+
+    if (editingProductId === productId) {
+      resetProductForm();
+    }
+
+    try {
+      await syncProductsWithServer();
+    } catch {
+      setProducts((prevProducts) => prevProducts.filter((product) => product.id !== productId));
+    }
+
+    showToast('Esse produto ja nao existe mais no servidor. Atualizei o catalogo.');
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -463,6 +494,11 @@ export default function App() {
 
       resetProductForm();
     } catch (error) {
+      if (editingProductId && isMissingProductError(error)) {
+        await handleMissingProduct(editingProductId);
+        return;
+      }
+
       showToast(error.message || 'Nao foi possivel salvar o produto.');
     } finally {
       setIsSubmittingProduct(false);
@@ -484,6 +520,11 @@ export default function App() {
 
       showToast(`${productToRemove.name} removido do catalogo.`);
     } catch (error) {
+      if (isMissingProductError(error)) {
+        await handleMissingProduct(productId);
+        return;
+      }
+
       showToast(error.message || 'Nao foi possivel remover o produto.');
     }
   };
