@@ -418,6 +418,44 @@ function getProductsTableRef() {
   return `${quoteIdentifier(DATABASE_SCHEMA)}.${quoteIdentifier(DATABASE_TABLE)}`;
 }
 
+async function doesProductsTableExist() {
+  const result = await pool.query('SELECT to_regclass($1) AS table_name', [
+    `${DATABASE_SCHEMA}.${DATABASE_TABLE}`,
+  ]);
+
+  return Boolean(result.rows[0]?.table_name);
+}
+
+async function ensureProductsTable() {
+  const productsTableRef = getProductsTableRef();
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${productsTableRef} (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        price NUMERIC(10, 2) NOT NULL,
+        category TEXT NOT NULL,
+        images JSONB NOT NULL DEFAULT '[]'::jsonb,
+        badge TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL,
+        details JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  } catch (error) {
+    if (!/permission denied for schema/i.test(error.message)) {
+      throw error;
+    }
+
+    const tableExists = await doesProductsTableExist();
+    if (!tableExists) {
+      throw error;
+    }
+  }
+}
+
 function formatStartupError(error) {
   const lines = ['Falha ao iniciar o servidor da loja.'];
 
@@ -461,20 +499,7 @@ async function initializeStore() {
     const productsTableRef = getProductsTableRef();
     pool = createPool();
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${productsTableRef} (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        price NUMERIC(10, 2) NOT NULL,
-        category TEXT NOT NULL,
-        images JSONB NOT NULL DEFAULT '[]'::jsonb,
-        badge TEXT NOT NULL DEFAULT '',
-        description TEXT NOT NULL,
-        details JSONB NOT NULL DEFAULT '[]'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
+    await ensureProductsTable();
 
     const countResult = await pool.query(`SELECT COUNT(*)::int AS count FROM ${productsTableRef}`);
     if ((countResult.rows[0]?.count ?? 0) === 0) {
