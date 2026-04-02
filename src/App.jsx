@@ -831,13 +831,13 @@ export default function App() {
       </section>
 
       <main id="catalogo" className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="mb-12 flex flex-col items-end justify-between gap-6 md:flex-row">
+        <div className="mb-12 flex flex-col items-center justify-between gap-6 text-center md:flex-row md:items-end md:text-left">
           <div>
             <h2 className="mb-2 text-4xl font-black uppercase tracking-tighter md:text-5xl">Merch oficial</h2>
             <p className="text-zinc-400">Garanta o seu antes que acabe.</p>
           </div>
 
-          <div className="hide-scrollbar flex w-full gap-2 overflow-x-auto pb-2 md:w-auto">
+          <div className="hide-scrollbar flex w-full justify-start gap-2 overflow-x-auto pb-2 md:w-auto md:justify-end">
             {categories.map((category) => (
               <button
                 key={category}
