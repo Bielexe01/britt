@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: loja-britt
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_SCHEMA
+        value: public
+      - key: DATABASE_TABLE
+        value: products
+      - key: CLOUDINARY_FOLDER
+        value: loja-britt/products
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
