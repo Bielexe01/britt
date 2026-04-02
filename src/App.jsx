@@ -1244,13 +1244,20 @@ export default function App() {
         <div className="fixed inset-0 z-[60] flex items-end justify-center px-0 pt-8 sm:items-center sm:px-6 sm:py-6 lg:px-8">
           <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm" onClick={closeProductModal}></div>
           <div
-            className={`animate-modal-in relative flex w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl transition-transform duration-300 ${
+            className={`animate-modal-shell relative w-full ${
               isMobileViewport
-                ? 'max-h-[92vh] rounded-t-[2rem] border-b-0 border-l-0 border-r-0'
-                : 'max-h-[90vh] max-w-5xl rounded-3xl lg:flex-row'
+                ? ''
+                : 'max-w-5xl'
             }`}
-            style={isMobileViewport ? { transform: `translateY(${modalDragOffset}px)` } : undefined}
           >
+            <div
+              className={`relative flex w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl transition-transform duration-300 ${
+                isMobileViewport
+                  ? 'max-h-[92vh] rounded-t-[2rem] border-b-0 border-l-0 border-r-0'
+                  : 'max-h-[90vh] rounded-3xl lg:flex-row'
+              }`}
+              style={isMobileViewport ? { transform: `translateY(${modalDragOffset}px)` } : undefined}
+            >
             <div
               className={`flex items-center justify-center bg-zinc-900/95 py-3 ${isMobileViewport ? 'border-b border-zinc-800' : 'sr-only'}`}
               onTouchStart={handleProductModalDragStart}
@@ -1359,6 +1366,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
@@ -1556,12 +1564,12 @@ export default function App() {
         .animate-fade-in-up {
           animation: fade-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        @keyframes modal-in {
-          from { opacity: 0; transform: translateY(24px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes modal-shell-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
-        .animate-modal-in {
-          animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        .animate-modal-shell {
+          animation: modal-shell-in 0.2s ease-out forwards;
         }
         .hide-scrollbar::-webkit-scrollbar {
           display: none;
