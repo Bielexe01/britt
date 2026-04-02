@@ -1,5 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { ShoppingBag, X, Menu, Camera, Music2, ArrowRight, Star, Minus, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ShoppingBag,
+  X,
+  Menu,
+  Camera,
+  Music2,
+  ArrowRight,
+  Star,
+  Minus,
+  Plus,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Grip,
+} from 'lucide-react';
 import { createProduct, deleteProduct, fetchProducts, updateProduct } from './lib/productsApi';
 
 const CUSTOM_LOGO_URL = '/img/logo.jpeg';
@@ -9,6 +23,9 @@ const HERO_IMAGE_URL =
 const DEFAULT_PRODUCT_IMAGE =
   'https://images.unsplash.com/photo-1523398002811-999ca8dec234?auto=format&fit=crop&q=80&w=900';
 const MAX_IMAGES_PER_PRODUCT = 8;
+const MOBILE_BREAKPOINT = 1024;
+const PRODUCT_SWIPE_THRESHOLD = 36;
+const MODAL_DRAG_CLOSE_THRESHOLD = 120;
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -196,6 +213,11 @@ function formatPrice(value) {
   return priceFormatter.format(value);
 }
 
+function getWrappedImageIndex(currentIndex, imagesLength, step) {
+  if (imagesLength <= 0) return 0;
+  return (currentIndex + step + imagesLength) % imagesLength;
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -211,6 +233,12 @@ function isMissingProductError(error) {
 }
 
 export default function App() {
+  const managerPanelScrollRef = useRef(null);
+  const managerFormRef = useRef(null);
+  const productNameInputRef = useRef(null);
+  const modalDragStateRef = useRef({ startY: 0, isDragging: false });
+  const productCardTouchStateRef = useRef({});
+  const suppressedProductClickRef = useRef({ productId: null, timestamp: 0 });
   const [logoHasError, setLogoHasError] = useState(false);
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -223,8 +251,11 @@ export default function App() {
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [activeProductImageIndex, setActiveProductImageIndex] = useState(0);
+  const [productCardImageIndexes, setProductCardImageIndexes] = useState({});
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [modalDragOffset, setModalDragOffset] = useState(0);
   const [toast, setToast] = useState(null);
 
   const logoSrc = logoHasError ? FALLBACK_LOGO_URL : CUSTOM_LOGO_URL;
@@ -246,6 +277,7 @@ export default function App() {
     currentCategory === 'Todos'
       ? products
       : products.filter((product) => product.category === currentCategory);
+  const editingProduct = products.find((product) => product.id === editingProductId) ?? null;
 
   function showToast(message) {
     setToast(message);
@@ -280,6 +312,47 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    syncViewport();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncViewport);
+      return () => mediaQuery.removeEventListener('change', syncViewport);
+    }
+
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!isManagerPanelOpen || !editingProductId) return;
+
+    const focusEditingForm = window.setTimeout(() => {
+      managerPanelScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      managerFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      productNameInputRef.current?.focus();
+    }, 80);
+
+    return () => window.clearTimeout(focusEditingForm);
+  }, [editingProductId, isManagerPanelOpen]);
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setModalDragOffset(0);
+    }
+  }, [selectedProductId]);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setModalDragOffset(0);
+    }
+  }, [isMobileViewport]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const loadProducts = async () => {
@@ -310,6 +383,65 @@ export default function App() {
   const resetProductForm = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
     setEditingProductId(null);
+  };
+
+  const updateProductCardImageIndex = (productId, imagesLength, nextIndex) => {
+    if (imagesLength <= 0) return;
+
+    setProductCardImageIndexes((prevIndexes) => ({
+      ...prevIndexes,
+      [productId]: Math.min(Math.max(nextIndex, 0), imagesLength - 1),
+    }));
+  };
+
+  const cycleProductCardImage = (productId, imagesLength, step) => {
+    if (imagesLength <= 1) return;
+
+    setProductCardImageIndexes((prevIndexes) => {
+      const currentIndex = prevIndexes[productId] ?? 0;
+      return {
+        ...prevIndexes,
+        [productId]: getWrappedImageIndex(currentIndex, imagesLength, step),
+      };
+    });
+  };
+
+  const handleProductCardTouchStart = (productId, event) => {
+    if ((event.touches?.length ?? 0) !== 1) return;
+
+    productCardTouchStateRef.current[productId] = {
+      startX: event.touches[0].clientX,
+    };
+  };
+
+  const handleProductCardTouchEnd = (productId, imagesLength, event) => {
+    const touchState = productCardTouchStateRef.current[productId];
+    delete productCardTouchStateRef.current[productId];
+
+    if (!touchState || imagesLength <= 1) return;
+
+    const endX = event.changedTouches?.[0]?.clientX;
+    if (typeof endX !== 'number') return;
+
+    const deltaX = endX - touchState.startX;
+    if (Math.abs(deltaX) < PRODUCT_SWIPE_THRESHOLD) return;
+
+    suppressedProductClickRef.current = {
+      productId,
+      timestamp: Date.now(),
+    };
+    cycleProductCardImage(productId, imagesLength, deltaX < 0 ? 1 : -1);
+  };
+
+  const shouldIgnoreProductCardClick = (productId) => {
+    const { productId: suppressedProductId, timestamp } = suppressedProductClickRef.current;
+
+    if (suppressedProductId !== productId) return false;
+
+    if (Date.now() - timestamp > 450) return false;
+
+    suppressedProductClickRef.current = { productId: null, timestamp: 0 };
+    return true;
   };
 
   const handleProductImageUpload = async (event) => {
@@ -409,23 +541,57 @@ export default function App() {
     setCart((prevCart) => prevCart.filter((item) => item.id !== id));
   };
 
-  const openProductModal = (productId) => {
+  const openProductModal = (productId, startingImageIndex = 0) => {
     setSelectedProductId(productId);
     setSelectedQuantity(1);
-    setActiveProductImageIndex(0);
+    setActiveProductImageIndex(startingImageIndex);
+    setModalDragOffset(0);
   };
 
   const closeProductModal = () => {
     setSelectedProductId(null);
     setSelectedQuantity(1);
     setActiveProductImageIndex(0);
+    setModalDragOffset(0);
   };
 
   const handleProductCardKeyDown = (event, productId) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      openProductModal(productId);
+      openProductModal(productId, productCardImageIndexes[productId] ?? 0);
     }
+  };
+
+  const handleProductModalDragStart = (event) => {
+    if (!isMobileViewport || !selectedProductId || (event.touches?.length ?? 0) !== 1) return;
+
+    modalDragStateRef.current = {
+      startY: event.touches[0].clientY,
+      isDragging: true,
+    };
+  };
+
+  const handleProductModalDragMove = (event) => {
+    if (!isMobileViewport || !modalDragStateRef.current.isDragging) return;
+
+    const currentY = event.touches?.[0]?.clientY;
+    if (typeof currentY !== 'number') return;
+
+    const nextOffset = Math.max(0, currentY - modalDragStateRef.current.startY);
+    setModalDragOffset(nextOffset);
+  };
+
+  const handleProductModalDragEnd = () => {
+    if (!isMobileViewport || !modalDragStateRef.current.isDragging) return;
+
+    modalDragStateRef.current.isDragging = false;
+
+    if (modalDragOffset > MODAL_DRAG_CLOSE_THRESHOLD) {
+      closeProductModal();
+      return;
+    }
+
+    setModalDragOffset(0);
   };
 
   const addSelectedProductToCart = () => {
@@ -440,6 +606,8 @@ export default function App() {
   };
 
   const startEditingProduct = (product) => {
+    closeProductModal();
+    setIsMenuOpen(false);
     setEditingProductId(product.id);
     setProductForm(formatProductToForm(product));
     setIsManagerPanelOpen(true);
@@ -700,37 +868,97 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
             {filteredProducts.map((product) => (
-              <div
-                key={product.id}
-                role="button"
-                tabIndex={0}
-                aria-label={`Abrir detalhes de ${product.name}`}
-                className="group relative cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                onClick={() => openProductModal(product.id)}
-                onKeyDown={(event) => handleProductCardKeyDown(event, product.id)}
-              >
-                <div className="relative mb-4 aspect-[4/5] overflow-hidden rounded-lg bg-zinc-900">
+              (() => {
+                const productImages = getProductImages(product);
+                const cardImageIndex = Math.min(
+                  productCardImageIndexes[product.id] ?? 0,
+                  Math.max(productImages.length - 1, 0),
+                );
+                const activeCardImage = productImages[cardImageIndex] ?? DEFAULT_PRODUCT_IMAGE;
+
+                return (
+                  <div
+                    key={product.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir detalhes de ${product.name}`}
+                    className="group relative cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    onClick={() => {
+                      if (shouldIgnoreProductCardClick(product.id)) return;
+                      openProductModal(product.id, cardImageIndex);
+                    }}
+                    onKeyDown={(event) => handleProductCardKeyDown(event, product.id)}
+                  >
+                <div
+                  className="relative mb-4 aspect-[4/5] overflow-hidden rounded-lg bg-zinc-900"
+                  onTouchStart={(event) => handleProductCardTouchStart(product.id, event)}
+                  onTouchEnd={(event) => handleProductCardTouchEnd(product.id, productImages.length, event)}
+                >
                   {product.badge && (
                     <div className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-3 py-1 text-xs font-black uppercase tracking-widest text-zinc-950">
                       {product.badge}
                     </div>
                   )}
-                  {getProductImages(product).length > 1 && (
+                  {productImages.length > 1 && (
                     <div className="absolute right-4 top-4 z-10 rounded-full bg-zinc-950/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-100">
-                      {getProductImages(product).length} fotos
+                      {cardImageIndex + 1}/{productImages.length}
                     </div>
                   )}
                   <img
-                    src={getPrimaryImage(product)}
+                    src={activeCardImage}
                     alt={product.name}
                     className="h-full w-full object-cover object-center transition-transform duration-700 group-hover:scale-105 group-hover:opacity-80"
                   />
+                  {productImages.length > 1 && (
+                    <>
+                      <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
+                        {productImages.map((image, index) => (
+                          <button
+                            key={`${product.id}-dot-${image}-${index}`}
+                            type="button"
+                            aria-label={`Ver imagem ${index + 1} de ${product.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              updateProductCardImageIndex(product.id, productImages.length, index);
+                            }}
+                            className={`h-2.5 rounded-full transition-all ${
+                              cardImageIndex === index ? 'w-7 bg-sky-300' : 'w-2.5 bg-white/45'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        aria-label={`Imagem anterior de ${product.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          cycleProductCardImage(product.id, productImages.length, -1);
+                        }}
+                        className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-100 transition hover:bg-zinc-950 lg:opacity-0 lg:group-hover:opacity-100"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label={`Proxima imagem de ${product.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          cycleProductCardImage(product.id, productImages.length, 1);
+                        }}
+                        className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-100 transition hover:bg-zinc-950 lg:opacity-0 lg:group-hover:opacity-100"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
                   <div className="absolute inset-x-0 bottom-0 translate-y-4 p-4 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        openProductModal(product.id);
+                        openProductModal(product.id, cardImageIndex);
                       }}
                       className="flex w-full items-center justify-center gap-2 rounded-full bg-zinc-50 py-4 font-black uppercase tracking-widest text-zinc-950 transition-colors hover:bg-sky-300"
                     >
@@ -747,7 +975,9 @@ export default function App() {
                     <span className="whitespace-nowrap text-lg font-black">{formatPrice(product.price)}</span>
                   </div>
                 </div>
-              </div>
+                  </div>
+                );
+              })()
             ))}
           </div>
         )}
@@ -771,12 +1001,32 @@ export default function App() {
               </button>
             </div>
 
-            <div className="grid flex-1 gap-8 overflow-y-auto p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr]">
-              <form className="grid gap-4" onSubmit={handleProductSubmit}>
+            <div ref={managerPanelScrollRef} className="grid flex-1 gap-8 overflow-y-auto p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr]">
+              <form ref={managerFormRef} className="grid gap-4" onSubmit={handleProductSubmit}>
+                {editingProduct && (
+                  <div className="rounded-3xl border border-sky-400/30 bg-sky-400/10 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Editando agora</p>
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-lg font-black uppercase text-white">{editingProduct.name}</p>
+                        <p className="mt-1 text-sm text-zinc-400">O formulario foi preenchido com os dados atuais desse produto.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={resetProductForm}
+                        className="rounded-full border border-zinc-700 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
+                      >
+                        Cancelar edicao
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
                     <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Nome</span>
                     <input
+                      ref={productNameInputRef}
                       required
                       name="name"
                       value={productForm.name}
@@ -964,10 +1214,14 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => startEditingProduct(product)}
-                        className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-5 py-3 text-xs font-semibold uppercase tracking-[0.25em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
+                        className={`inline-flex items-center justify-center gap-2 rounded-full border px-5 py-3 text-xs font-semibold uppercase tracking-[0.25em] transition ${
+                          editingProductId === product.id
+                            ? 'border-sky-400 bg-sky-400/10 text-sky-300'
+                            : 'border-zinc-700 bg-zinc-900 text-zinc-100 hover:border-sky-400 hover:text-sky-300'
+                        }`}
                       >
                         <ArrowRight className="h-4 w-4" />
-                        Editar
+                        {editingProductId === product.id ? 'Editando' : 'Editar'}
                       </button>
                       <button
                         type="button"
@@ -987,10 +1241,30 @@ export default function App() {
       )}
 
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center px-0 pt-8 sm:items-center sm:px-6 sm:py-6 lg:px-8">
           <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm" onClick={closeProductModal}></div>
-          <div className="animate-modal-in relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-2xl lg:flex-row">
-            <div className="relative min-h-[320px] bg-zinc-950 lg:w-1/2">
+          <div
+            className={`animate-modal-in relative flex w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl transition-transform duration-300 ${
+              isMobileViewport
+                ? 'max-h-[92vh] rounded-t-[2rem] border-b-0 border-l-0 border-r-0'
+                : 'max-h-[90vh] max-w-5xl rounded-3xl lg:flex-row'
+            }`}
+            style={isMobileViewport ? { transform: `translateY(${modalDragOffset}px)` } : undefined}
+          >
+            <div
+              className={`flex items-center justify-center bg-zinc-900/95 py-3 ${isMobileViewport ? 'border-b border-zinc-800' : 'sr-only'}`}
+              onTouchStart={handleProductModalDragStart}
+              onTouchMove={handleProductModalDragMove}
+              onTouchEnd={handleProductModalDragEnd}
+              onTouchCancel={handleProductModalDragEnd}
+            >
+              <div className="flex items-center gap-2 rounded-full bg-zinc-800 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.25em] text-zinc-300">
+                <Grip className="h-4 w-4" />
+                Arraste para fechar
+              </div>
+            </div>
+
+            <div className="relative min-h-[300px] bg-zinc-950 lg:w-1/2">
               {selectedProduct.badge && (
                 <div className="absolute left-6 top-6 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-3 py-1 text-xs font-black uppercase tracking-widest text-zinc-950">
                   {selectedProduct.badge}
