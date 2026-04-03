@@ -186,6 +186,8 @@ function normalizeImageAsset(image, index = 0) {
     typeof rawImage.publicId === 'string' && rawImage.publicId.trim().length > 0
       ? rawImage.publicId.trim()
       : null;
+  const positionX = normalizeImagePosition(rawImage.positionX ?? rawImage.focusX ?? rawImage.x);
+  const positionY = normalizeImagePosition(rawImage.positionY ?? rawImage.focusY ?? rawImage.y);
   const storage =
     typeof rawImage.storage === 'string' && rawImage.storage.trim().length > 0
       ? rawImage.storage.trim()
@@ -204,7 +206,22 @@ function normalizeImageAsset(image, index = 0) {
     height: Number(rawImage.height) || null,
     bytes: Number(rawImage.bytes) || null,
     format: typeof rawImage.format === 'string' ? rawImage.format.trim() || null : null,
+    positionX,
+    positionY,
   };
+}
+
+function normalizeImagePosition(value) {
+  if (value === '' || value === null || value === undefined) {
+    return 50;
+  }
+
+  const numericValue = Number(value);
+  if (Number.isNaN(numericValue)) {
+    return 50;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(numericValue)));
 }
 
 function getProductImageAssets(product) {
@@ -273,6 +290,49 @@ function createExternalImageAsset(imageUrl, index = 0) {
   );
 }
 
+function parseImageAssets(value) {
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+
+    return parsed
+      .map((item, index) =>
+        typeof item === 'string' ? createExternalImageAsset(item, index) : normalizeImageAsset(item, index),
+      )
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function parseLegacyExistingImageAssets(value) {
+  return parseJsonArray(value)
+    .map((imageUrl, index) => createExternalImageAsset(imageUrl, index))
+    .filter(Boolean);
+}
+
+function parseImagePositions(value) {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((item) => ({
+      positionX: normalizeImagePosition(item?.positionX),
+      positionY: normalizeImagePosition(item?.positionY),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function buildUploadedImageAsset(uploadResult) {
   return normalizeImageAsset({
     id: uploadResult.asset_id ?? uploadResult.public_id,
@@ -301,8 +361,34 @@ function getRetainedImageAssets(currentImageAssets, existingImageUrls) {
   );
 
   return existingImageUrls
-    .map((imageUrl, index) => imageAssetByUrl.get(imageUrl) ?? createExternalImageAsset(imageUrl, index))
+    .map((imageAssetOrUrl, index) => {
+      const normalizedImageAsset =
+        typeof imageAssetOrUrl === 'string'
+          ? createExternalImageAsset(imageAssetOrUrl, index)
+          : normalizeImageAsset(imageAssetOrUrl, index);
+
+      if (!normalizedImageAsset) {
+        return null;
+      }
+
+      const currentImageAsset = imageAssetByUrl.get(normalizedImageAsset.url);
+      return currentImageAsset
+        ? normalizeImageAsset({ ...currentImageAsset, ...normalizedImageAsset }, index)
+        : normalizedImageAsset;
+    })
     .filter(Boolean);
+}
+
+function applyImagePositions(imageAssets, imagePositions) {
+  return imageAssets.map((imageAsset, index) =>
+    normalizeImageAsset(
+      {
+        ...imageAsset,
+        ...imagePositions[index],
+      },
+      index,
+    ),
+  );
 }
 
 function getRemovedImageAssets(previousImageAssets, nextImageAssets) {
@@ -813,12 +899,13 @@ app.get('/api/products', async (_req, res) => {
 });
 
 app.post('/api/products', upload.array('images', MAX_IMAGES_PER_PRODUCT), async (req, res) => {
-  const existingImages = parseJsonArray(req.body.existingImages);
-  const uploadedImageAssets = await uploadIncomingImages(req.files ?? []);
+  const existingImageAssets = parseImageAssets(req.body.existingImageAssets)
+    ?? parseLegacyExistingImageAssets(req.body.existingImages);
+  const uploadedImageAssets = applyImagePositions(
+    await uploadIncomingImages(req.files ?? []),
+    parseImagePositions(req.body.newImagePositions),
+  );
   const details = parseJsonArray(req.body.details);
-  const existingImageAssets = existingImages
-    .map((imageUrl, index) => createExternalImageAsset(imageUrl, index))
-    .filter(Boolean);
 
   try {
     const product = normalizeProduct({
@@ -849,9 +936,13 @@ app.put('/api/products/:id', upload.array('images', MAX_IMAGES_PER_PRODUCT), asy
     return;
   }
 
-  const existingImages = parseJsonArray(req.body.existingImages);
-  const retainedImageAssets = getRetainedImageAssets(currentProduct.imageAssets, existingImages);
-  const uploadedImageAssets = await uploadIncomingImages(req.files ?? []);
+  const submittedImageAssets = parseImageAssets(req.body.existingImageAssets)
+    ?? parseLegacyExistingImageAssets(req.body.existingImages);
+  const retainedImageAssets = getRetainedImageAssets(currentProduct.imageAssets, submittedImageAssets);
+  const uploadedImageAssets = applyImagePositions(
+    await uploadIncomingImages(req.files ?? []),
+    parseImagePositions(req.body.newImagePositions),
+  );
   const details = parseJsonArray(req.body.details);
 
   try {

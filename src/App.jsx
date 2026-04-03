@@ -131,8 +131,84 @@ const EMPTY_ADMIN_LOGIN_FORM = {
 const inputClassName =
   'w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-sky-400';
 
+function normalizeImagePosition(value) {
+  if (value === '' || value === null || value === undefined) {
+    return 50;
+  }
+
+  const numericValue = Number(value);
+  if (Number.isNaN(numericValue)) {
+    return 50;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(numericValue)));
+}
+
+function normalizeImageAsset(image, index = 0) {
+  if (!image) return null;
+
+  const rawImage =
+    typeof image === 'string'
+      ? { url: image }
+      : typeof image === 'object'
+        ? image
+        : null;
+
+  if (!rawImage) return null;
+
+  const url = String(rawImage.url ?? rawImage.previewUrl ?? rawImage.persistedUrl ?? rawImage.image ?? '').trim();
+  if (!url) return null;
+
+  return {
+    id: String(rawImage.id ?? rawImage.publicId ?? `image-${index}`),
+    url,
+    publicId: typeof rawImage.publicId === 'string' ? rawImage.publicId.trim() || null : null,
+    storage: typeof rawImage.storage === 'string' ? rawImage.storage.trim() || 'external' : 'external',
+    positionX: normalizeImagePosition(rawImage.positionX ?? rawImage.focusX ?? rawImage.x),
+    positionY: normalizeImagePosition(rawImage.positionY ?? rawImage.focusY ?? rawImage.y),
+  };
+}
+
+function createFallbackImageAsset() {
+  return normalizeImageAsset({
+    id: 'fallback-image',
+    url: DEFAULT_PRODUCT_IMAGE,
+    storage: 'external',
+    positionX: 50,
+    positionY: 50,
+  });
+}
+
+function getProductImageAssets(product) {
+  if (Array.isArray(product.imageAssets) && product.imageAssets.length > 0) {
+    return product.imageAssets.map(normalizeImageAsset).filter(Boolean);
+  }
+
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    return product.images.map(normalizeImageAsset).filter(Boolean);
+  }
+
+  if (product.image) {
+    const imageAsset = normalizeImageAsset(product.image);
+    return imageAsset ? [imageAsset] : [];
+  }
+
+  return [];
+}
+
+function getImageObjectPosition(imageAsset) {
+  const normalizedImageAsset = normalizeImageAsset(imageAsset) ?? createFallbackImageAsset();
+  return `${normalizedImageAsset.positionX}% ${normalizedImageAsset.positionY}%`;
+}
+
 function cloneProduct(product) {
-  return { ...product, details: [...product.details], images: [...getProductImages(product)] };
+  const imageAssets = getProductImageAssets(product);
+  return {
+    ...product,
+    details: [...product.details],
+    imageAssets,
+    images: imageAssets.map((imageAsset) => imageAsset.url),
+  };
 }
 
 function createDefaultProducts() {
@@ -140,19 +216,16 @@ function createDefaultProducts() {
 }
 
 function normalizeProduct(product, index = 0) {
-  const images =
-    Array.isArray(product.images) && product.images.length > 0
-      ? product.images.map((image) => String(image).trim()).filter(Boolean)
-      : product.image
-        ? [String(product.image).trim()]
-        : [DEFAULT_PRODUCT_IMAGE];
+  const imageAssets = getProductImageAssets(product);
+  const normalizedImageAssets = imageAssets.length > 0 ? imageAssets : [createFallbackImageAsset()];
 
   return {
     id: product.id ?? Date.now() + index,
     name: String(product.name ?? 'Produto sem nome').trim() || 'Produto sem nome',
     price: Math.max(0, Number(product.price) || 0),
     category: String(product.category ?? 'Colecao').trim() || 'Colecao',
-    images,
+    images: normalizedImageAssets.map((imageAsset) => imageAsset.url),
+    imageAssets: normalizedImageAssets,
     badge: String(product.badge ?? '').trim(),
     description:
       String(product.description ?? '').trim() || 'Produto oficial da loja com identidade da banda.',
@@ -165,23 +238,24 @@ function normalizeProduct(product, index = 0) {
   };
 }
 
-function getProductImages(product) {
-  return Array.isArray(product.images) && product.images.length > 0
-    ? product.images
-    : product.image
-      ? [product.image]
-      : [DEFAULT_PRODUCT_IMAGE];
+function getPrimaryImageAsset(product) {
+  return getProductImageAssets(product)[0] ?? createFallbackImageAsset();
 }
 
 function getPrimaryImage(product) {
-  return getProductImages(product)[0] ?? DEFAULT_PRODUCT_IMAGE;
+  return getPrimaryImageAsset(product).url ?? DEFAULT_PRODUCT_IMAGE;
 }
 
-function createExistingGalleryItem(url, index) {
+function createExistingGalleryItem(imageAsset, index) {
+  const normalizedImageAsset = normalizeImageAsset(imageAsset, index) ?? createFallbackImageAsset();
   return {
-    id: `existing-${index}-${url}`,
-    previewUrl: url,
-    persistedUrl: url,
+    id: `existing-${index}-${normalizedImageAsset.url}`,
+    previewUrl: normalizedImageAsset.url,
+    persistedUrl: normalizedImageAsset.url,
+    publicId: normalizedImageAsset.publicId,
+    storage: normalizedImageAsset.storage,
+    positionX: normalizedImageAsset.positionX,
+    positionY: normalizedImageAsset.positionY,
     file: null,
     isExisting: true,
   };
@@ -195,7 +269,7 @@ function formatProductToForm(product) {
     badge: product.badge,
     description: product.description,
     details: product.details.join(', '),
-    gallery: getProductImages(product).map((image, index) => createExistingGalleryItem(image, index)),
+    gallery: getProductImageAssets(product).map((imageAsset, index) => createExistingGalleryItem(imageAsset, index)),
   };
 }
 
@@ -212,11 +286,24 @@ function buildProductPayload(draft) {
     badge: draft.badge.trim(),
     description: draft.description.trim() || 'Produto oficial da loja com identidade da banda.',
     details: details.length > 0 ? details : ['Produto oficial'],
-    existingImages: draft.gallery
+    existingImageAssets: draft.gallery
       .filter((item) => item.isExisting)
-      .map((item) => item.persistedUrl)
+      .map((item, index) => normalizeImageAsset({
+        id: item.id ?? `existing-${index}`,
+        url: item.persistedUrl,
+        publicId: item.publicId,
+        storage: item.storage,
+        positionX: item.positionX,
+        positionY: item.positionY,
+      }, index))
       .filter(Boolean),
-    newImages: draft.gallery.filter((item) => !item.isExisting && item.file),
+    newImages: draft.gallery
+      .filter((item) => !item.isExisting && item.file)
+      .map((item) => ({
+        file: item.file,
+        positionX: normalizeImagePosition(item.positionX),
+        positionY: normalizeImagePosition(item.positionY),
+      })),
   };
 }
 
@@ -314,12 +401,13 @@ export default function App() {
 
   const logoSrc = logoHasError ? FALLBACK_LOGO_URL : CUSTOM_LOGO_URL;
   const selectedProduct = products.find((product) => product.id === selectedProductId) ?? null;
-  const selectedProductImages = selectedProduct ? getProductImages(selectedProduct) : [];
+  const selectedProductImageAssets = selectedProduct ? getProductImageAssets(selectedProduct) : [];
   const currentProductImageIndex =
-    selectedProductImages.length > 0
-      ? Math.min(activeProductImageIndex, selectedProductImages.length - 1)
+    selectedProductImageAssets.length > 0
+      ? Math.min(activeProductImageIndex, selectedProductImageAssets.length - 1)
       : 0;
-  const activeProductImage = selectedProductImages[currentProductImageIndex] ?? DEFAULT_PRODUCT_IMAGE;
+  const activeProductImageAsset = selectedProductImageAssets[currentProductImageIndex] ?? createFallbackImageAsset();
+  const activeProductImage = activeProductImageAsset.url ?? DEFAULT_PRODUCT_IMAGE;
   const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
   const cartItemsCount = cart.reduce((count, item) => count + item.quantity, 0);
   const categories = ['Todos', ...new Set(products.map((product) => product.category))];
@@ -524,6 +612,10 @@ export default function App() {
           id: `pending-${Date.now()}-${index}-${file.name}`,
           previewUrl: await readFileAsDataUrl(file),
           persistedUrl: null,
+          publicId: null,
+          storage: 'pending',
+          positionX: 50,
+          positionY: 50,
           file,
           isExisting: false,
         })),
@@ -563,6 +655,37 @@ export default function App() {
         gallery: [selectedItem, ...prevForm.gallery.filter((item) => item.id !== itemId)],
       };
     });
+  };
+
+  const updateGalleryItemPosition = (itemId, axis, value) => {
+    const normalizedValue = normalizeImagePosition(value);
+
+    setProductForm((prevForm) => ({
+      ...prevForm,
+      gallery: prevForm.gallery.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              [axis]: normalizedValue,
+            }
+          : item,
+      ),
+    }));
+  };
+
+  const resetGalleryItemPosition = (itemId) => {
+    setProductForm((prevForm) => ({
+      ...prevForm,
+      gallery: prevForm.gallery.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              positionX: 50,
+              positionY: 50,
+            }
+          : item,
+      ),
+    }));
   };
 
   const openManagerPanel = () => {
@@ -757,7 +880,16 @@ export default function App() {
       formData.set('badge', payload.badge);
       formData.set('description', payload.description);
       formData.set('details', JSON.stringify(payload.details));
-      formData.set('existingImages', JSON.stringify(payload.existingImages));
+      formData.set('existingImageAssets', JSON.stringify(payload.existingImageAssets));
+      formData.set(
+        'newImagePositions',
+        JSON.stringify(
+          payload.newImages.map((item) => ({
+            positionX: item.positionX,
+            positionY: item.positionY,
+          })),
+        ),
+      );
 
       payload.newImages.forEach((item) => {
         formData.append('images', item.file);
@@ -1065,12 +1197,14 @@ export default function App() {
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
             {filteredProducts.map((product) => (
               (() => {
-                const productImages = getProductImages(product);
+                const productImageAssets = getProductImageAssets(product);
+                const productImages = productImageAssets.map((imageAsset) => imageAsset.url);
                 const cardImageIndex = Math.min(
                   productCardImageIndexes[product.id] ?? 0,
                   Math.max(productImages.length - 1, 0),
                 );
-                const activeCardImage = productImages[cardImageIndex] ?? DEFAULT_PRODUCT_IMAGE;
+                const activeCardImageAsset = productImageAssets[cardImageIndex] ?? createFallbackImageAsset();
+                const activeCardImage = activeCardImageAsset.url ?? DEFAULT_PRODUCT_IMAGE;
 
                 return (
                   <div
@@ -1104,13 +1238,14 @@ export default function App() {
                     src={activeCardImage}
                     alt={product.name}
                     className="h-full w-full object-cover object-center transition-transform duration-700 group-hover:scale-105 group-hover:opacity-80"
+                    style={{ objectPosition: getImageObjectPosition(activeCardImageAsset) }}
                   />
                   {productImages.length > 1 && (
                     <>
                       <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2">
-                        {productImages.map((image, index) => (
+                        {productImageAssets.map((imageAsset, index) => (
                           <button
-                            key={`${product.id}-dot-${image}-${index}`}
+                            key={`${product.id}-dot-${imageAsset.url}-${index}`}
                             type="button"
                             aria-label={`Ver imagem ${index + 1} de ${product.name}`}
                             onClick={(event) => {
@@ -1312,14 +1447,55 @@ export default function App() {
                       {productForm.gallery.map((item, index) => (
                         <div key={item.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2">
                           <div className="relative aspect-square overflow-hidden rounded-xl bg-zinc-900">
-                            <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                            <img
+                              src={item.previewUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              style={{ objectPosition: `${item.positionX}% ${item.positionY}%` }}
+                            />
                             {index === 0 && (
                               <div className="absolute left-2 top-2 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-950">
                                 Capa
                               </div>
                             )}
                           </div>
-                          <div className="mt-2 flex flex-col gap-2">
+                          <div className="mt-3 space-y-3">
+                            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-3">
+                              <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                                <span>Horizontal</span>
+                                <span>{item.positionX}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={item.positionX}
+                                onChange={(event) => updateGalleryItemPosition(item.id, 'positionX', event.target.value)}
+                                className="w-full accent-sky-300"
+                              />
+                              <div className="mt-3 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                                <span>Vertical</span>
+                                <span>{item.positionY}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={item.positionY}
+                                onChange={(event) => updateGalleryItemPosition(item.id, 'positionY', event.target.value)}
+                                className="w-full accent-sky-300"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => resetGalleryItemPosition(item.id)}
+                                className="mt-3 w-full rounded-full border border-zinc-700 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
+                              >
+                                Centralizar
+                              </button>
+                            </div>
+                            <div className="flex flex-col gap-2">
                             <button
                               type="button"
                               onClick={() => makeGalleryItemPrimary(item.id)}
@@ -1334,6 +1510,7 @@ export default function App() {
                             >
                               Remover
                             </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1398,6 +1575,7 @@ export default function App() {
                         src={getPrimaryImage(product)}
                         alt={product.name}
                         className="h-24 w-20 flex-shrink-0 rounded-2xl object-cover"
+                        style={{ objectPosition: getImageObjectPosition(getPrimaryImageAsset(product)) }}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1482,12 +1660,17 @@ export default function App() {
                   {selectedProduct.badge}
                 </div>
               )}
-              <img src={activeProductImage} alt={selectedProduct.name} className="h-full w-full object-cover" />
-              {selectedProductImages.length > 1 && (
+              <img
+                src={activeProductImage}
+                alt={selectedProduct.name}
+                className="h-full w-full object-cover"
+                style={{ objectPosition: getImageObjectPosition(activeProductImageAsset) }}
+              />
+              {selectedProductImageAssets.length > 1 && (
                 <div className="absolute inset-x-0 bottom-0 flex gap-3 overflow-x-auto bg-gradient-to-t from-zinc-950/95 via-zinc-950/70 to-transparent p-3 sm:p-4">
-                  {selectedProductImages.map((image, index) => (
+                  {selectedProductImageAssets.map((imageAsset, index) => (
                     <button
-                      key={`${selectedProduct.id}-${image}-${index}`}
+                      key={`${selectedProduct.id}-${imageAsset.url}-${index}`}
                       type="button"
                       onClick={() => setActiveProductImageIndex(index)}
                       className={`h-16 w-14 flex-shrink-0 overflow-hidden rounded-xl border transition sm:h-20 sm:w-16 ${
@@ -1496,7 +1679,12 @@ export default function App() {
                           : 'border-zinc-700 hover:border-zinc-500'
                       }`}
                     >
-                      <img src={image} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={imageAsset.url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        style={{ objectPosition: getImageObjectPosition(imageAsset) }}
+                      />
                     </button>
                   ))}
                 </div>
@@ -1621,7 +1809,12 @@ export default function App() {
                   {cart.map((item) => (
                     <div key={item.id} className="flex gap-4 rounded-lg border border-zinc-800/60 bg-zinc-950/50 p-3">
                       <div className="h-24 w-20 flex-shrink-0 overflow-hidden rounded bg-zinc-800">
-                        <img src={getPrimaryImage(item)} alt={item.name} className="h-full w-full object-cover" />
+                        <img
+                          src={getPrimaryImage(item)}
+                          alt={item.name}
+                          className="h-full w-full object-cover"
+                          style={{ objectPosition: getImageObjectPosition(getPrimaryImageAsset(item)) }}
+                        />
                       </div>
                       <div className="flex flex-1 flex-col justify-between py-1">
                         <div>
