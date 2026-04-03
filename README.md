@@ -25,6 +25,39 @@ O projeto esta preparado para subir como app unica:
 
 Quando existir `dist/index.html`, o backend tambem serve o frontend. Se o build nao existir, ele sobe em modo API-only e avisa no log.
 
+## Colocar online na Vercel
+
+O projeto agora tambem esta pronto para deploy na Vercel com:
+
+- frontend estatico saindo de `dist/`
+- API Express publicada em `api/[...route].js`
+- configuracao em `vercel.json`
+
+### Passo a passo
+
+1. Suba este projeto para um repositorio no GitHub.
+2. Na Vercel, clique em `Add New...` > `Project`.
+3. Importe o repositorio `loja-britt`.
+4. Confirme estas configuracoes:
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+5. Cadastre as variaveis de ambiente da aplicacao:
+   - `DATABASE_URL`
+   - `DATABASE_SCHEMA`
+   - `DATABASE_TABLE`
+   - `CLOUDINARY_URL`
+   - `CLOUDINARY_FOLDER`
+6. Rode o deploy.
+7. Depois do deploy, valide:
+   - `https://SEU-DOMINIO.vercel.app/api/health`
+
+### Importante na Vercel
+
+- O fallback em arquivo local nao e indicado na Vercel. Em producao, configure `DATABASE_URL`.
+- Upload local em `server/uploads/` tambem nao persiste na Vercel. Para upload de imagens, configure `CLOUDINARY_URL`.
+- Se houver produtos antigos apontando para `/uploads/...`, essas imagens precisam ser reenviadas ou migradas antes do deploy.
+- As imagens usadas pelo frontend agora ficam em `public/img`, entao entram no build estatico corretamente.
+
 ## Colocar online no Render
 
 O jeito mais simples para compartilhar com seus amigos e usar o Render:

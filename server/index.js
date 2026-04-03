@@ -20,6 +20,7 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const DIST_INDEX_FILE = path.join(DIST_DIR, 'index.html');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
+const IS_VERCEL = Boolean(process.env.VERCEL);
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const USE_POSTGRES = Boolean(DATABASE_URL);
 const DATABASE_SCHEMA = process.env.DATABASE_SCHEMA?.trim() || 'public';
@@ -39,6 +40,9 @@ const STORAGE_PROVIDER = USE_CLOUDINARY ? 'cloudinary' : 'local';
 const MAX_IMAGES_PER_PRODUCT = 8;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const { Pool } = pg;
+let appReadyPromise;
+let frontendServingConfigured = false;
+let missingFrontendBuildLogged = false;
 
 if (USE_CLOUDINARY && !CLOUDINARY_URL) {
   cloudinary.config({
@@ -131,8 +135,19 @@ const DEFAULT_PRODUCTS = [
 ];
 
 async function ensureStorage() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.mkdir(UPLOADS_DIR, { recursive: true });
+  if (!USE_POSTGRES) {
+    if (IS_VERCEL) {
+      throw new Error(
+        'Na Vercel, configure a DATABASE_URL. O fallback em arquivo local nao funciona em filesystem serverless.',
+      );
+    }
+
+    await fs.mkdir(DATA_DIR, { recursive: true });
+  }
+
+  if (!USE_CLOUDINARY && !IS_VERCEL) {
+    await fs.mkdir(UPLOADS_DIR, { recursive: true });
+  }
 }
 
 async function hasProductionBuild() {
@@ -342,6 +357,12 @@ async function uploadFileToCloudinary(file) {
 }
 
 async function uploadIncomingImages(files) {
+  if (files.length > 0 && !USE_CLOUDINARY && IS_VERCEL) {
+    throw new Error(
+      'Na Vercel, configure a CLOUDINARY_URL para uploads. O filesystem local nao persiste entre execucoes.',
+    );
+  }
+
   const uploadedImageAssets = [];
 
   try {
@@ -459,6 +480,10 @@ async function ensureProductsTable() {
 function formatStartupError(error) {
   const lines = ['Falha ao iniciar o servidor da loja.'];
 
+  if (IS_VERCEL) {
+    lines.push('Ambiente detectado: Vercel.');
+  }
+
   if (USE_POSTGRES) {
     lines.push(
       `Banco configurado: Postgres (${DATABASE_SCHEMA}.${DATABASE_TABLE}) usando a DATABASE_URL atual.`,
@@ -473,6 +498,14 @@ function formatStartupError(error) {
     }
   } else {
     lines.push('O fallback em arquivo local tambem nao conseguiu iniciar.');
+
+    if (IS_VERCEL) {
+      lines.push('Na Vercel, configure a DATABASE_URL para persistir os produtos.');
+    }
+  }
+
+  if (IS_VERCEL && !USE_CLOUDINARY) {
+    lines.push('Para uploads de imagens na Vercel, configure a CLOUDINARY_URL.');
   }
 
   lines.push(`Detalhe tecnico: ${error.message}`);
@@ -750,8 +783,16 @@ const upload = multer({
 
 const app = express();
 app.use(express.json());
-app.use('/img', express.static(path.join(ROOT_DIR, 'img')));
 app.use('/uploads', express.static(UPLOADS_DIR));
+app.use(async (_req, _res, next) => {
+  try {
+    await ensureAppReady();
+    next();
+  } catch (error) {
+    error.statusCode = error.statusCode ?? 500;
+    next(error);
+  }
+});
 
 app.get('/api/health', async (_req, res) => {
   const buildReady = await hasProductionBuild();
@@ -761,7 +802,7 @@ app.get('/api/health', async (_req, res) => {
     database: USE_POSTGRES ? 'postgres' : 'file',
     table: `${DATABASE_SCHEMA}.${DATABASE_TABLE}`,
     storage: STORAGE_PROVIDER,
-    frontend: buildReady ? 'embedded' : 'api-only',
+    frontend: IS_VERCEL ? 'vercel-static' : buildReady ? 'embedded' : 'api-only',
     timestamp: new Date().toISOString(),
   });
 });
@@ -849,25 +890,51 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  const statusCode = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+  const statusCode = error.code === 'LIMIT_FILE_SIZE' ? 413 : error.statusCode ?? 400;
   res.status(statusCode).json({ message: error.message || 'Erro interno do servidor.' });
 });
 
 const port = Number(process.env.PORT) || 3001;
 
+function ensureAppReady() {
+  if (!appReadyPromise) {
+    appReadyPromise = initializeStore().catch((error) => {
+      appReadyPromise = null;
+      throw error;
+    });
+  }
+
+  return appReadyPromise;
+}
+
+async function ensureFrontendServing() {
+  if (frontendServingConfigured) {
+    return;
+  }
+
+  const buildReady = await hasProductionBuild();
+  if (!buildReady) {
+    if (!missingFrontendBuildLogged) {
+      console.log(
+        'Build do frontend nao encontrado. A API vai subir em modo API-only ate voce rodar "npm run build".',
+      );
+      missingFrontendBuildLogged = true;
+    }
+
+    return;
+  }
+
+  app.use(express.static(DIST_DIR));
+  app.get(/^(?!\/api|\/uploads).*/, (_req, res) => {
+    res.sendFile(DIST_INDEX_FILE);
+  });
+  frontendServingConfigured = true;
+}
+
 async function startServer() {
   try {
-    await initializeStore();
-
-    const buildReady = await hasProductionBuild();
-    if (buildReady) {
-      app.use(express.static(DIST_DIR));
-      app.get(/^(?!\/api|\/uploads|\/img).*/, (_req, res) => {
-        res.sendFile(DIST_INDEX_FILE);
-      });
-    } else {
-      console.log('Build do frontend nao encontrado. A API vai subir em modo API-only ate voce rodar "npm run build".');
-    }
+    await ensureAppReady();
+    await ensureFrontendServing();
 
     app.listen(port, '0.0.0.0', () => {
       console.log(
@@ -880,4 +947,11 @@ async function startServer() {
   }
 }
 
-await startServer();
+const isMainModule = Boolean(process.argv[1]) && path.resolve(process.argv[1]) === __filename;
+
+export { ensureAppReady, startServer };
+export default app;
+
+if (isMainModule) {
+  await startServer();
+}
