@@ -1113,7 +1113,7 @@ async function reorderProductRecords(productIds) {
       }
 
       const updateValues = normalizedProductIds
-        .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`)
+        .map((_, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::integer)`)
         .join(', ');
       const updateParams = normalizedProductIds.flatMap((productId, index) => [productId, index]);
 
