@@ -254,6 +254,7 @@ export default function App() {
   const [productCardImageIndexes, setProductCardImageIndexes] = useState({});
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [removingProductId, setRemovingProductId] = useState(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [modalDragOffset, setModalDragOffset] = useState(0);
   const [toast, setToast] = useState(null);
@@ -289,6 +290,11 @@ export default function App() {
     const normalizedProducts = serverProducts.map(normalizeProduct);
     setProducts(normalizedProducts);
     return normalizedProducts;
+  };
+
+  const findServerProductById = async (productId) => {
+    const latestProducts = await syncProductsWithServer();
+    return latestProducts.find((product) => product.id === productId) ?? null;
   };
 
   const handleMissingProduct = async (productId) => {
@@ -605,13 +611,27 @@ export default function App() {
     setProductForm((prevForm) => ({ ...prevForm, [name]: value }));
   };
 
-  const startEditingProduct = (product) => {
+  const startEditingProduct = async (product) => {
+    let productToEdit = product;
+
+    try {
+      const currentServerProduct = await findServerProductById(product.id);
+      if (!currentServerProduct) {
+        await handleMissingProduct(product.id);
+        return;
+      }
+
+      productToEdit = currentServerProduct;
+    } catch {
+      // Keep the local product if the sync fails temporarily.
+    }
+
     closeProductModal();
     setIsMenuOpen(false);
-    setEditingProductId(product.id);
-    setProductForm(formatProductToForm(product));
+    setEditingProductId(productToEdit.id);
+    setProductForm(formatProductToForm(productToEdit));
     setIsManagerPanelOpen(true);
-    showToast(`${product.name} pronto para editar.`);
+    showToast(`${productToEdit.name} pronto para editar.`);
   };
 
   const handleProductSubmit = async (event) => {
@@ -619,6 +639,14 @@ export default function App() {
     setIsSubmittingProduct(true);
 
     try {
+      if (editingProductId) {
+        const currentServerProduct = await findServerProductById(editingProductId);
+        if (!currentServerProduct) {
+          await handleMissingProduct(editingProductId);
+          return;
+        }
+      }
+
       const payload = buildProductPayload(productForm);
       const formData = new FormData();
 
@@ -675,9 +703,17 @@ export default function App() {
 
   const removeProduct = async (productId) => {
     const productToRemove = products.find((product) => product.id === productId);
-    if (!productToRemove) return;
+    if (!productToRemove || removingProductId === productId) return;
 
     try {
+      setRemovingProductId(productId);
+
+      const currentServerProduct = await findServerProductById(productId);
+      if (!currentServerProduct) {
+        await handleMissingProduct(productId);
+        return;
+      }
+
       await deleteProduct(productId);
 
       setProducts((prevProducts) => prevProducts.filter((product) => product.id !== productId));
@@ -694,6 +730,8 @@ export default function App() {
       }
 
       showToast(error.message || 'Nao foi possivel remover o produto.');
+    } finally {
+      setRemovingProductId(null);
     }
   };
 
@@ -1226,10 +1264,11 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => removeProduct(product.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-full border border-red-400/25 bg-red-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-200 transition hover:border-red-300/40 hover:text-red-100"
+                        disabled={removingProductId === product.id}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-red-400/25 bg-red-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-200 transition hover:border-red-300/40 hover:text-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Trash2 className="h-4 w-4" />
-                        Remover
+                        {removingProductId === product.id ? 'Removendo...' : 'Remover'}
                       </button>
                     </div>
                   </div>
