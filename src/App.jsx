@@ -14,9 +14,13 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Grip,
+  Search,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { createProduct, deleteProduct, fetchProducts, updateProduct } from './lib/productsApi';
+import { createProduct, deleteProduct, fetchProducts, reorderProducts, updateProduct } from './lib/productsApi';
 
 const CUSTOM_LOGO_URL = '/img/logo.jpeg';
 const FALLBACK_LOGO_URL = "https://placehold.co/420x140/09090b/c4b5fd?text=B'RITT";
@@ -32,6 +36,13 @@ const WHATSAPP_PHONE_NUMBER = String(import.meta.env.VITE_WHATSAPP_PHONE_NUMBER 
 const ADMIN_USERNAME = String(import.meta.env.VITE_ADMIN_USERNAME ?? 'admin').trim();
 const ADMIN_PASSWORD = String(import.meta.env.VITE_ADMIN_PASSWORD ?? 'britt2026').trim();
 const ADMIN_SESSION_STORAGE_KEY = 'britt-admin-authenticated';
+const PRODUCT_SORT_OPTIONS = [
+  { value: 'destaque', label: 'Ordem da vitrine' },
+  { value: 'recentes', label: 'Mais recentes' },
+  { value: 'price-asc', label: 'Menor preco' },
+  { value: 'price-desc', label: 'Maior preco' },
+  { value: 'name-asc', label: 'Nome A-Z' },
+];
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -144,6 +155,46 @@ function normalizeImagePosition(value) {
   return Math.min(100, Math.max(0, Math.round(numericValue)));
 }
 
+function normalizeDisplayOrder(value, fallback = 0) {
+  const numericValue = Number(value);
+  const resolvedValue = Number.isNaN(numericValue) ? fallback : numericValue;
+  return Math.max(0, Math.round(resolvedValue));
+}
+
+function toComparableTimestamp(value) {
+  const timestamp = new Date(value ?? 0).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareProductsForDisplay(a, b) {
+  const displayOrderDifference =
+    normalizeDisplayOrder(a.displayOrder, Number.MAX_SAFE_INTEGER)
+    - normalizeDisplayOrder(b.displayOrder, Number.MAX_SAFE_INTEGER);
+
+  if (displayOrderDifference !== 0) {
+    return displayOrderDifference;
+  }
+
+  const createdAtDifference = toComparableTimestamp(b.createdAt) - toComparableTimestamp(a.createdAt);
+
+  if (createdAtDifference !== 0) {
+    return createdAtDifference;
+  }
+
+  return String(a.id ?? '').localeCompare(String(b.id ?? ''));
+}
+
+function sortProductsForDisplay(products) {
+  return [...products].sort(compareProductsForDisplay);
+}
+
+function renumberProducts(products) {
+  return sortProductsForDisplay(products).map((product, index) => ({
+    ...product,
+    displayOrder: index,
+  }));
+}
+
 function normalizeImageAsset(image, index = 0) {
   if (!image) return null;
 
@@ -212,7 +263,7 @@ function cloneProduct(product) {
 }
 
 function createDefaultProducts() {
-  return DEFAULT_PRODUCTS.map(cloneProduct).map(normalizeProduct);
+  return renumberProducts(DEFAULT_PRODUCTS.map(cloneProduct).map(normalizeProduct));
 }
 
 function normalizeProduct(product, index = 0) {
@@ -221,6 +272,7 @@ function normalizeProduct(product, index = 0) {
 
   return {
     id: product.id ?? Date.now() + index,
+    displayOrder: normalizeDisplayOrder(product.displayOrder, index),
     name: String(product.name ?? 'Produto sem nome').trim() || 'Produto sem nome',
     price: Math.max(0, Number(product.price) || 0),
     category: String(product.category ?? 'Colecao').trim() || 'Colecao',
@@ -386,7 +438,11 @@ export default function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isProductsLoading, setIsProductsLoading] = useState(true);
   const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
+  const [isReorderingProducts, setIsReorderingProducts] = useState(false);
   const [activeCategory, setActiveCategory] = useState('Todos');
+  const [activeBadge, setActiveBadge] = useState('Todos');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState(PRODUCT_SORT_OPTIONS[0].value);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [activeProductImageIndex, setActiveProductImageIndex] = useState(0);
@@ -411,14 +467,59 @@ export default function App() {
   const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
   const cartItemsCount = cart.reduce((count, item) => count + item.quantity, 0);
   const categories = ['Todos', ...new Set(products.map((product) => product.category))];
+  const badges = ['Todos', ...new Set(products.map((product) => product.badge).filter(Boolean))];
   const currentCategory =
     activeCategory === 'Todos' || products.some((product) => product.category === activeCategory)
       ? activeCategory
       : 'Todos';
-  const filteredProducts =
-    currentCategory === 'Todos'
-      ? products
-      : products.filter((product) => product.category === currentCategory);
+  const currentBadge =
+    activeBadge === 'Todos' || products.some((product) => product.badge === activeBadge)
+      ? activeBadge
+      : 'Todos';
+  const currentSortOption = PRODUCT_SORT_OPTIONS.some((option) => option.value === sortOption)
+    ? sortOption
+    : PRODUCT_SORT_OPTIONS[0].value;
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredProducts = [...products]
+    .filter((product) => currentCategory === 'Todos' || product.category === currentCategory)
+    .filter((product) => currentBadge === 'Todos' || product.badge === currentBadge)
+    .filter((product) => {
+      if (!normalizedSearchQuery) {
+        return true;
+      }
+
+      const searchableContent = [
+        product.name,
+        product.category,
+        product.badge,
+        product.description,
+        ...product.details,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchableContent.includes(normalizedSearchQuery);
+    })
+    .sort((productA, productB) => {
+      switch (currentSortOption) {
+        case 'recentes':
+          return (
+            toComparableTimestamp(productB.createdAt) - toComparableTimestamp(productA.createdAt)
+            || compareProductsForDisplay(productA, productB)
+          );
+        case 'price-asc':
+          return productA.price - productB.price || compareProductsForDisplay(productA, productB);
+        case 'price-desc':
+          return productB.price - productA.price || compareProductsForDisplay(productA, productB);
+        case 'name-asc':
+          return productA.name.localeCompare(productB.name, 'pt-BR') || compareProductsForDisplay(productA, productB);
+        default:
+          return compareProductsForDisplay(productA, productB);
+      }
+    });
+  const hasActiveCatalogFilters =
+    Boolean(normalizedSearchQuery) || currentCategory !== 'Todos' || currentBadge !== 'Todos'
+    || currentSortOption !== PRODUCT_SORT_OPTIONS[0].value;
   const editingProduct = products.find((product) => product.id === editingProductId) ?? null;
 
   function showToast(message) {
@@ -428,7 +529,7 @@ export default function App() {
 
   const syncProductsWithServer = async () => {
     const serverProducts = await fetchProducts();
-    const normalizedProducts = serverProducts.map(normalizeProduct);
+    const normalizedProducts = renumberProducts(serverProducts.map(normalizeProduct));
     setProducts(normalizedProducts);
     return normalizedProducts;
   };
@@ -509,7 +610,7 @@ export default function App() {
         const serverProducts = await fetchProducts();
         if (!isMounted) return;
 
-        setProducts(serverProducts.map(normalizeProduct));
+        setProducts(renumberProducts(serverProducts.map(normalizeProduct)));
       } catch (error) {
         if (!isMounted) return;
 
@@ -848,6 +949,13 @@ export default function App() {
     setProductForm((prevForm) => ({ ...prevForm, [name]: value }));
   };
 
+  const resetCatalogFilters = () => {
+    setSearchQuery('');
+    setActiveCategory('Todos');
+    setActiveBadge('Todos');
+    setSortOption(PRODUCT_SORT_OPTIONS[0].value);
+  };
+
   const startEditingProduct = (product) => {
     closeProductModal();
     setIsMenuOpen(false);
@@ -857,9 +965,45 @@ export default function App() {
     showToast(`${product.name} pronto para editar.`);
   };
 
+  const moveProduct = async (productId, direction) => {
+    if (isReorderingProducts) return;
+
+    const currentIndex = products.findIndex((product) => product.id === productId);
+    const targetIndex = currentIndex + direction;
+
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= products.length) {
+      return;
+    }
+
+    const previousProducts = products;
+    const nextProducts = [...products];
+    const [movedProduct] = nextProducts.splice(currentIndex, 1);
+    nextProducts.splice(targetIndex, 0, movedProduct);
+
+    const reorderedProducts = nextProducts.map((product, index) => ({
+      ...product,
+      displayOrder: index,
+    }));
+
+    setProducts(reorderedProducts);
+    setIsReorderingProducts(true);
+
+    try {
+      const savedProducts = await reorderProducts(reorderedProducts.map((product) => product.id));
+      setProducts(renumberProducts(savedProducts.map(normalizeProduct)));
+      showToast(`${movedProduct.name} agora aparece na posicao ${targetIndex + 1} da vitrine.`);
+    } catch (error) {
+      setProducts(previousProducts);
+      showToast(error.message || 'Nao foi possivel salvar a nova ordem de exibicao.');
+    } finally {
+      setIsReorderingProducts(false);
+    }
+  };
+
   const handleProductSubmit = async (event) => {
     event.preventDefault();
     if (isSubmittingProductRef.current) return;
+    const isEditingProduct = Boolean(editingProductId);
 
     if (!event.currentTarget.checkValidity()) {
       event.currentTarget.reportValidity();
@@ -896,18 +1040,32 @@ export default function App() {
       });
 
       const savedProduct = normalizeProduct(
-        editingProductId
+        isEditingProduct
           ? await updateProduct(editingProductId, formData)
           : await createProduct(formData),
       );
 
-      setProducts((prevProducts) => {
-        if (editingProductId) {
-          return prevProducts.map((product) => (product.id === editingProductId ? savedProduct : product));
+      if (isEditingProduct) {
+        setProducts((prevProducts) =>
+          sortProductsForDisplay(
+            prevProducts.map((product) => (product.id === editingProductId ? savedProduct : product)),
+          ),
+        );
+      } else {
+        try {
+          await syncProductsWithServer();
+        } catch {
+          setProducts((prevProducts) =>
+            renumberProducts([
+              {
+                ...savedProduct,
+                displayOrder: 0,
+              },
+              ...prevProducts,
+            ]),
+          );
         }
-
-        return [savedProduct, ...prevProducts];
-      });
+      }
 
       setCart((prevCart) =>
         prevCart.map((item) =>
@@ -916,14 +1074,14 @@ export default function App() {
       );
 
       showToast(
-        editingProductId
+        isEditingProduct
           ? `${savedProduct.name} atualizado com sucesso.`
           : `${savedProduct.name} adicionado ao catalogo.`,
       );
 
       resetProductForm();
     } catch (error) {
-      if (editingProductId && isMissingProductError(error)) {
+      if (isEditingProduct && isMissingProductError(error)) {
         await handleMissingProduct(editingProductId);
         return;
       }
@@ -945,7 +1103,14 @@ export default function App() {
 
       await deleteProduct(productId);
 
-      setProducts((prevProducts) => prevProducts.filter((product) => product.id !== productId));
+      setProducts((prevProducts) =>
+        prevProducts
+          .filter((product) => product.id !== productId)
+          .map((product, index) => ({
+            ...product,
+            displayOrder: index,
+          })),
+      );
       setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
 
       if (selectedProductId === productId) closeProductModal();
@@ -1159,27 +1324,101 @@ export default function App() {
       </section>
 
       <main id="catalogo" className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="mb-12 flex flex-col items-center justify-between gap-6 text-center md:flex-row md:items-end md:text-left">
-          <div>
-            <h2 className="mb-2 text-4xl font-black uppercase tracking-tighter md:text-5xl">Merch oficial</h2>
-            <p className="text-zinc-400">Garanta o seu antes que acabe.</p>
+        <div className="mb-12 space-y-6">
+          <div className="flex flex-col items-center justify-between gap-6 text-center md:flex-row md:items-end md:text-left">
+            <div>
+              <h2 className="mb-2 text-4xl font-black uppercase tracking-tighter md:text-5xl">Merch oficial</h2>
+              <p className="text-zinc-400">Garanta o seu antes que acabe.</p>
+            </div>
+
+            <label className="relative w-full max-w-xl">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className={`${inputClassName} pl-12`}
+                placeholder="Buscar por nome, categoria, badge ou descricao"
+              />
+            </label>
           </div>
 
-          <div className="hide-scrollbar flex w-full justify-start gap-2 overflow-x-auto pb-2 md:w-auto md:justify-end">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setActiveCategory(category)}
-                className={`whitespace-nowrap rounded-full px-6 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
-                  currentCategory === category
-                    ? 'bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 text-zinc-950'
-                    : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50'
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5">
+            <div className="flex flex-col gap-4">
+              <div className="hide-scrollbar flex w-full justify-start gap-2 overflow-x-auto pb-2">
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveCategory(category)}
+                    className={`whitespace-nowrap rounded-full px-6 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
+                      currentCategory === category
+                        ? 'bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 text-zinc-950'
+                        : 'bg-zinc-950 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50'
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+                <label className="grid gap-2">
+                  <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Filtrar badge
+                  </span>
+                  <select
+                    value={currentBadge}
+                    onChange={(event) => setActiveBadge(event.target.value)}
+                    className={`${inputClassName} appearance-none`}
+                  >
+                    {badges.map((badge) => (
+                      <option key={badge} value={badge}>
+                        {badge === 'Todos' ? 'Todos os badges' : badge}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Ordenar por</span>
+                    <select
+                      value={currentSortOption}
+                      onChange={(event) => setSortOption(event.target.value)}
+                      className={`${inputClassName} appearance-none`}
+                    >
+                      {PRODUCT_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={resetCatalogFilters}
+                    disabled={!hasActiveCatalogFilters}
+                    className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-zinc-950 px-5 py-3 text-xs font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  {filteredProducts.length} {filteredProducts.length === 1 ? 'produto encontrado' : 'produtos encontrados'}
+                </p>
+                <p>
+                  {hasActiveCatalogFilters
+                    ? 'Busca inteligente ativa para achar mais rapido o que voce quer.'
+                    : 'Use a busca, categorias e ordenacao para navegar pela colecao.'}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1190,8 +1429,14 @@ export default function App() {
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="rounded-3xl border border-zinc-800 bg-zinc-900/60 p-10 text-center">
-            <p className="text-lg font-semibold text-zinc-100">Nenhum produto nessa categoria.</p>
-            <p className="mt-3 text-zinc-400">Abra o painel no menu para adicionar um novo item.</p>
+            <p className="text-lg font-semibold text-zinc-100">
+              {hasActiveCatalogFilters ? 'Nenhum produto combina com sua busca.' : 'Nenhum produto disponivel no momento.'}
+            </p>
+            <p className="mt-3 text-zinc-400">
+              {hasActiveCatalogFilters
+                ? 'Ajuste os filtros acima ou limpe a busca para voltar a ver o catalogo completo.'
+                : 'Abra o painel no menu para adicionar um novo item ao catalogo.'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:gap-8 lg:grid-cols-3">
@@ -1572,8 +1817,47 @@ export default function App() {
               </form>
 
               <div className="space-y-4">
-                {products.map((product) => (
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+                  A ordem abaixo define exatamente como os produtos aparecem para o cliente na vitrine. Use as setas para subir ou descer cada item.
+                </div>
+
+                {products.map((product, index) => (
                   <div key={product.id} className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-xs font-black uppercase tracking-[0.2em] text-sky-300">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-500">Ordem da vitrine</p>
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {isReorderingProducts ? 'Salvando nova ordem...' : 'Ajuste quando quiser sem perder os dados.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Mover ${product.name} para cima`}
+                          onClick={() => moveProduct(product.id, -1)}
+                          disabled={isReorderingProducts || index === 0}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-100 transition hover:border-sky-400 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Mover ${product.name} para baixo`}
+                          onClick={() => moveProduct(product.id, 1)}
+                          disabled={isReorderingProducts || index === products.length - 1}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-100 transition hover:border-sky-400 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="flex gap-4">
                       <img
                         src={getPrimaryImage(product)}

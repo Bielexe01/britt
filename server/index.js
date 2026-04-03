@@ -57,6 +57,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: "T-Shirt Oversized b'ritt",
+    displayOrder: 0,
     price: 149.9,
     category: 'Roupas',
     images: ['https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&q=80&w=800'],
@@ -70,6 +71,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: 'Moletom Heavy Tour',
+    displayOrder: 1,
     price: 289.9,
     category: 'Roupas',
     images: ['https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&q=80&w=800'],
@@ -83,6 +85,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: 'Bone Dad Hat Logo',
+    displayOrder: 2,
     price: 89.9,
     category: 'Acessorios',
     images: ['https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&q=80&w=800'],
@@ -96,6 +99,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: 'Shoulder Bag Midnight',
+    displayOrder: 3,
     price: 119.9,
     category: 'Acessorios',
     images: ['https://images.unsplash.com/photo-1600850056064-a8b380df8395?auto=format&fit=crop&q=80&w=800'],
@@ -109,6 +113,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: "Longsleeve Acid b'ritt",
+    displayOrder: 4,
     price: 169.9,
     category: 'Roupas',
     images: ['https://images.unsplash.com/photo-1576566588028-4147f3842f27?auto=format&fit=crop&q=80&w=800'],
@@ -122,6 +127,7 @@ const DEFAULT_PRODUCTS = [
   {
     id: crypto.randomUUID(),
     name: "Vinil Duplo 'A Nova Era'",
+    displayOrder: 5,
     price: 199.9,
     category: 'Musica',
     images: ['https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=800'],
@@ -224,6 +230,46 @@ function normalizeImagePosition(value) {
   return Math.min(100, Math.max(0, Math.round(numericValue)));
 }
 
+function normalizeDisplayOrder(value, fallback = 0) {
+  const numericValue = Number(value);
+  const resolvedValue = Number.isNaN(numericValue) ? fallback : numericValue;
+  return Math.max(0, Math.round(resolvedValue));
+}
+
+function toComparableTimestamp(value) {
+  const timestamp = new Date(value ?? 0).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareProductsForDisplay(a, b) {
+  const displayOrderDifference =
+    normalizeDisplayOrder(a.displayOrder ?? a.display_order, Number.MAX_SAFE_INTEGER)
+    - normalizeDisplayOrder(b.displayOrder ?? b.display_order, Number.MAX_SAFE_INTEGER);
+
+  if (displayOrderDifference !== 0) {
+    return displayOrderDifference;
+  }
+
+  const createdAtDifference =
+    toComparableTimestamp(b.createdAt ?? b.created_at) - toComparableTimestamp(a.createdAt ?? a.created_at);
+
+  if (createdAtDifference !== 0) {
+    return createdAtDifference;
+  }
+
+  return String(a.id ?? '').localeCompare(String(b.id ?? ''));
+}
+
+function normalizeProductsCollection(products) {
+  return [...products]
+    .map((product, index) => normalizeProduct(product, index))
+    .sort(compareProductsForDisplay)
+    .map((product, index) => ({
+      ...product,
+      displayOrder: index,
+    }));
+}
+
 function getProductImageAssets(product) {
   if (Array.isArray(product.imageAssets) && product.imageAssets.length > 0) {
     return product.imageAssets.map(normalizeImageAsset).filter(Boolean);
@@ -241,12 +287,13 @@ function getProductImageAssets(product) {
   return [];
 }
 
-function normalizeProduct(product) {
+function normalizeProduct(product, index = 0) {
   const imageAssets = getProductImageAssets(product);
   const images = imageAssets.map((imageAsset) => imageAsset.url);
 
   return {
     id: product.id ?? crypto.randomUUID(),
+    displayOrder: normalizeDisplayOrder(product.displayOrder ?? product.display_order, index),
     name: String(product.name ?? 'Produto sem nome').trim() || 'Produto sem nome',
     price: Math.max(0, Number(product.price) || 0),
     category: String(product.category ?? 'Colecao').trim() || 'Colecao',
@@ -533,6 +580,43 @@ async function doesProductsTableExist() {
   return Boolean(result.rows[0]?.table_name);
 }
 
+async function doesProductsColumnExist(columnName) {
+  const result = await pool.query(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = $2
+          AND column_name = $3
+      ) AS exists
+    `,
+    [DATABASE_SCHEMA, DATABASE_TABLE, columnName],
+  );
+
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function compactPostgresDisplayOrder(client = pool) {
+  const productsTableRef = getProductsTableRef();
+
+  await client.query(`
+    WITH ordered_products AS (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (
+          ORDER BY COALESCE(display_order, 2147483647), created_at DESC, id ASC
+        ) - 1 AS next_display_order
+      FROM ${productsTableRef}
+    )
+    UPDATE ${productsTableRef} AS products
+    SET display_order = ordered_products.next_display_order
+    FROM ordered_products
+    WHERE products.id = ordered_products.id
+      AND products.display_order IS DISTINCT FROM ordered_products.next_display_order
+  `);
+}
+
 async function ensureProductsTable() {
   const productsTableRef = getProductsTableRef();
 
@@ -544,6 +628,7 @@ async function ensureProductsTable() {
         price NUMERIC(10, 2) NOT NULL,
         category TEXT NOT NULL,
         images JSONB NOT NULL DEFAULT '[]'::jsonb,
+        display_order INTEGER NOT NULL DEFAULT 0,
         badge TEXT NOT NULL DEFAULT '',
         description TEXT NOT NULL,
         details JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -561,6 +646,29 @@ async function ensureProductsTable() {
       throw error;
     }
   }
+}
+
+async function ensureProductsDisplayOrderColumn() {
+  const productsTableRef = getProductsTableRef();
+
+  if (!(await doesProductsColumnExist('display_order'))) {
+    try {
+      await pool.query(`ALTER TABLE ${productsTableRef} ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0`);
+    } catch (error) {
+      if (!/already exists/i.test(error.message)) {
+        if (!/permission denied/i.test(error.message)) {
+          throw error;
+        }
+
+        const columnExists = await doesProductsColumnExist('display_order');
+        if (!columnExists) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  await compactPostgresDisplayOrder();
 }
 
 function formatStartupError(error) {
@@ -619,6 +727,7 @@ async function initializeStore() {
     pool = createPool();
 
     await ensureProductsTable();
+    await ensureProductsDisplayOrderColumn();
 
     const countResult = await pool.query(`SELECT COUNT(*)::int AS count FROM ${productsTableRef}`);
     if ((countResult.rows[0]?.count ?? 0) === 0) {
@@ -626,9 +735,9 @@ async function initializeStore() {
         await pool.query(
           `
             INSERT INTO ${productsTableRef}
-              (id, name, price, category, images, badge, description, details, created_at, updated_at)
+              (id, name, price, category, images, display_order, badge, description, details, created_at, updated_at)
             VALUES
-              ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
+              ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
           `,
           [
             product.id,
@@ -636,6 +745,7 @@ async function initializeStore() {
             product.price,
             product.category,
             JSON.stringify(product.imageAssets),
+            product.displayOrder,
             product.badge,
             product.description,
             JSON.stringify(product.details),
@@ -655,8 +765,8 @@ async function initializeStore() {
   await db.read();
   db.data ||= { products: DEFAULT_PRODUCTS };
   db.data.products = Array.isArray(db.data.products) && db.data.products.length > 0
-    ? db.data.products.map(normalizeProduct)
-    : DEFAULT_PRODUCTS.map(normalizeProduct);
+    ? normalizeProductsCollection(db.data.products)
+    : normalizeProductsCollection(DEFAULT_PRODUCTS);
   await db.write();
 }
 
@@ -670,20 +780,21 @@ async function listProducts() {
         price::float8 AS price,
         category,
         images,
+        display_order AS "displayOrder",
         badge,
         description,
         details,
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM ${productsTableRef}
-      ORDER BY created_at DESC
+      ORDER BY display_order ASC, created_at DESC, id ASC
     `);
 
     return result.rows.map(normalizeProduct);
   }
 
   await db.read();
-  return db.data.products.map(normalizeProduct);
+  return normalizeProductsCollection(db.data.products);
 }
 
 async function getProductById(productId) {
@@ -697,6 +808,7 @@ async function getProductById(productId) {
           price::float8 AS price,
           category,
           images,
+          display_order AS "displayOrder",
           badge,
           description,
           details,
@@ -719,45 +831,66 @@ async function getProductById(productId) {
 async function createProductRecord(product) {
   if (USE_POSTGRES) {
     const productsTableRef = getProductsTableRef();
-    const result = await pool.query(
-      `
-        INSERT INTO ${productsTableRef}
-          (id, name, price, category, images, badge, description, details, created_at, updated_at)
-        VALUES
-          ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
-        RETURNING
-          id,
-          name,
-          price::float8 AS price,
-          category,
-          images,
-          badge,
-          description,
-          details,
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-      `,
-      [
-        product.id,
-        product.name,
-        product.price,
-        product.category,
-        JSON.stringify(product.imageAssets),
-        product.badge,
-        product.description,
-        JSON.stringify(product.details),
-        product.createdAt,
-        product.updatedAt,
-      ],
-    );
+    const client = await pool.connect();
 
-    return normalizeProduct(result.rows[0]);
+    try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE ${productsTableRef} SET display_order = COALESCE(display_order, 0) + 1`);
+
+      const result = await client.query(
+        `
+          INSERT INTO ${productsTableRef}
+            (id, name, price, category, images, display_order, badge, description, details, created_at, updated_at)
+          VALUES
+            ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
+          RETURNING
+            id,
+            name,
+            price::float8 AS price,
+            category,
+            images,
+            display_order AS "displayOrder",
+            badge,
+            description,
+            details,
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [
+          product.id,
+          product.name,
+          product.price,
+          product.category,
+          JSON.stringify(product.imageAssets),
+          0,
+          product.badge,
+          product.description,
+          JSON.stringify(product.details),
+          product.createdAt,
+          product.updatedAt,
+        ],
+      );
+
+      await client.query('COMMIT');
+      return normalizeProduct(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   await db.read();
-  db.data.products.unshift(product);
+  db.data.products = normalizeProductsCollection([
+    {
+      ...product,
+      displayOrder: 0,
+    },
+    ...db.data.products,
+  ]);
   await db.write();
-  return product;
+  return normalizeProduct(db.data.products.find((item) => item.id === product.id) ?? product);
 }
 
 async function updateProductRecord(productId, product) {
@@ -771,10 +904,11 @@ async function updateProductRecord(productId, product) {
           price = $3,
           category = $4,
           images = $5::jsonb,
-          badge = $6,
-          description = $7,
-          details = $8::jsonb,
-          updated_at = $9
+          display_order = $6,
+          badge = $7,
+          description = $8,
+          details = $9::jsonb,
+          updated_at = $10
         WHERE id = $1
         RETURNING
           id,
@@ -782,6 +916,7 @@ async function updateProductRecord(productId, product) {
           price::float8 AS price,
           category,
           images,
+          display_order AS "displayOrder",
           badge,
           description,
           details,
@@ -794,6 +929,7 @@ async function updateProductRecord(productId, product) {
         product.price,
         product.category,
         JSON.stringify(product.imageAssets),
+        product.displayOrder,
         product.badge,
         product.description,
         JSON.stringify(product.details),
@@ -811,33 +947,51 @@ async function updateProductRecord(productId, product) {
   }
 
   db.data.products[productIndex] = product;
+  db.data.products = normalizeProductsCollection(db.data.products);
   await db.write();
-  return product;
+  return normalizeProduct(db.data.products.find((item) => item.id === productId) ?? product);
 }
 
 async function deleteProductRecord(productId) {
   if (USE_POSTGRES) {
     const productsTableRef = getProductsTableRef();
-    const result = await pool.query(
-      `
-        DELETE FROM ${productsTableRef}
-        WHERE id = $1
-        RETURNING
-          id,
-          name,
-          price::float8 AS price,
-          category,
-          images,
-          badge,
-          description,
-          details,
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-      `,
-      [productId],
-    );
+    const client = await pool.connect();
 
-    return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
+    try {
+      await client.query('BEGIN');
+
+      const result = await client.query(
+        `
+          DELETE FROM ${productsTableRef}
+          WHERE id = $1
+          RETURNING
+            id,
+            name,
+            price::float8 AS price,
+            category,
+            images,
+            display_order AS "displayOrder",
+            badge,
+            description,
+            details,
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [productId],
+      );
+
+      if (result.rows[0]) {
+        await compactPostgresDisplayOrder(client);
+      }
+
+      await client.query('COMMIT');
+      return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   await db.read();
@@ -847,8 +1001,89 @@ async function deleteProductRecord(productId) {
   }
 
   const [removedProduct] = db.data.products.splice(productIndex, 1);
+  db.data.products = normalizeProductsCollection(db.data.products);
   await db.write();
   return normalizeProduct(removedProduct);
+}
+
+async function reorderProductRecords(productIds) {
+  const normalizedProductIds = [...new Set(productIds.map((productId) => String(productId).trim()).filter(Boolean))];
+
+  if (normalizedProductIds.length === 0) {
+    const error = new Error('Envie a lista completa de produtos para salvar a ordem de exibicao.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (USE_POSTGRES) {
+    const productsTableRef = getProductsTableRef();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const existingProducts = await client.query(`SELECT id FROM ${productsTableRef}`);
+      const existingIds = existingProducts.rows.map((row) => row.id);
+
+      if (
+        normalizedProductIds.length !== existingIds.length
+        || normalizedProductIds.some((productId) => !existingIds.includes(productId))
+      ) {
+        const error = new Error('A ordem de exibicao precisa incluir todos os produtos atuais.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const updateValues = normalizedProductIds
+        .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`)
+        .join(', ');
+      const updateParams = normalizedProductIds.flatMap((productId, index) => [productId, index]);
+
+      await client.query(
+        `
+          UPDATE ${productsTableRef} AS products
+          SET display_order = ordered_products.display_order
+          FROM (VALUES ${updateValues}) AS ordered_products(id, display_order)
+          WHERE products.id = ordered_products.id
+        `,
+        updateParams,
+      );
+
+      await client.query('COMMIT');
+      return listProducts();
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  await db.read();
+
+  const existingProducts = normalizeProductsCollection(db.data.products);
+  const productsById = new Map(existingProducts.map((product) => [product.id, product]));
+
+  if (
+    normalizedProductIds.length !== existingProducts.length
+    || normalizedProductIds.some((productId) => !productsById.has(productId))
+  ) {
+    const error = new Error('A ordem de exibicao precisa incluir todos os produtos atuais.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  db.data.products = normalizedProductIds.map((productId, index) =>
+    normalizeProduct(
+      {
+        ...productsById.get(productId),
+        displayOrder: index,
+      },
+      index,
+    ),
+  );
+  await db.write();
+  return db.data.products.map(normalizeProduct);
 }
 
 const upload = multer({
@@ -927,6 +1162,12 @@ app.post('/api/products', upload.array('images', MAX_IMAGES_PER_PRODUCT), async 
     await safeDeleteImageAssets(uploadedImageAssets);
     throw error;
   }
+});
+
+app.patch('/api/products/reorder', async (req, res) => {
+  const productIds = Array.isArray(req.body?.productIds) ? req.body.productIds : [];
+  const reorderedProducts = await reorderProductRecords(productIds);
+  res.json(reorderedProducts);
 });
 
 app.put('/api/products/:id', upload.array('images', MAX_IMAGES_PER_PRODUCT), async (req, res) => {

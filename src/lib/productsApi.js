@@ -46,3 +46,13 @@ export function deleteProduct(productId) {
     method: 'DELETE',
   });
 }
+
+export function reorderProducts(productIds) {
+  return request('/api/products/reorder', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ productIds }),
+  });
+}
