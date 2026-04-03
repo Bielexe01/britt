@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ShoppingBag,
   X,
@@ -428,6 +428,13 @@ function isMissingProductError(error) {
 
 export default function App() {
   const appShellRef = useRef(null);
+  const heroSectionRef = useRef(null);
+  const heroParallaxLayerRef = useRef(null);
+  const heroContentRef = useRef(null);
+  const catalogGridRef = useRef(null);
+  const productCardRefs = useRef(new Map());
+  const previousProductCardRectsRef = useRef(new Map());
+  const hasMeasuredProductLayoutRef = useRef(false);
   const managerPanelScrollRef = useRef(null);
   const managerFormRef = useRef(null);
   const productNameInputRef = useRef(null);
@@ -487,7 +494,8 @@ export default function App() {
   const currentSortOption = PRODUCT_SORT_OPTIONS.some((option) => option.value === sortOption)
     ? sortOption
     : PRODUCT_SORT_OPTIONS[0].value;
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
   const filteredProducts = [...products]
     .filter((product) => currentCategory === 'Todos' || product.category === currentCategory)
     .filter((product) => currentBadge === 'Todos' || product.badge === currentBadge)
@@ -528,12 +536,22 @@ export default function App() {
   const hasActiveCatalogFilters =
     Boolean(normalizedSearchQuery) || currentCategory !== 'Todos' || currentBadge !== 'Todos'
     || currentSortOption !== PRODUCT_SORT_OPTIONS[0].value;
+  const filteredProductLayoutKey = filteredProducts.map((product) => product.id).join('|');
   const editingProduct = products.find((product) => product.id === editingProductId) ?? null;
 
   function showToast(message) {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   }
+
+  const setProductCardRef = (productId) => (node) => {
+    if (node) {
+      productCardRefs.current.set(productId, node);
+      return;
+    }
+
+    productCardRefs.current.delete(productId);
+  };
 
   const syncProductsWithServer = async () => {
     const serverProducts = await fetchProducts();
@@ -642,6 +660,60 @@ export default function App() {
     if (typeof window === 'undefined') return undefined;
 
     const rootElement = appShellRef.current;
+    const heroSection = heroSectionRef.current;
+    if (!rootElement || !heroSection) {
+      return undefined;
+    }
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (motionQuery.matches) {
+      rootElement.style.setProperty('--blob-left-offset', '0px');
+      rootElement.style.setProperty('--blob-right-offset', '0px');
+      rootElement.style.setProperty('--hero-parallax-y', '0px');
+      rootElement.style.setProperty('--hero-parallax-scale', '1');
+      rootElement.style.setProperty('--hero-content-y', '0px');
+      return undefined;
+    }
+
+    let frameId = 0;
+
+    const updateParallax = () => {
+      frameId = 0;
+
+      const heroRect = heroSection.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || 1;
+      const heroProgress = Math.max(-1.2, Math.min(1.2, heroRect.top / viewportHeight));
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+
+      rootElement.style.setProperty('--blob-left-offset', `${Math.min(scrollY * 0.08, 120)}px`);
+      rootElement.style.setProperty('--blob-right-offset', `${Math.max(scrollY * -0.06, -96)}px`);
+      rootElement.style.setProperty('--hero-parallax-y', `${heroProgress * -54}px`);
+      rootElement.style.setProperty('--hero-parallax-scale', `${1.08 - Math.abs(heroProgress) * 0.04}`);
+      rootElement.style.setProperty('--hero-content-y', `${heroProgress * -18}px`);
+    };
+
+    const requestParallaxFrame = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(updateParallax);
+    };
+
+    requestParallaxFrame();
+    window.addEventListener('scroll', requestParallaxFrame, { passive: true });
+    window.addEventListener('resize', requestParallaxFrame);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener('scroll', requestParallaxFrame);
+      window.removeEventListener('resize', requestParallaxFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const rootElement = appShellRef.current;
     if (!rootElement) return undefined;
 
     const revealElements = Array.from(rootElement.querySelectorAll('.scroll-reveal'));
@@ -675,7 +747,71 @@ export default function App() {
     });
 
     return () => observer.disconnect();
-  }, [currentBadge, currentCategory, currentSortOption, filteredProducts.length, isProductsLoading, searchQuery]);
+  }, [currentBadge, currentCategory, currentSortOption, deferredSearchQuery, filteredProducts.length, isProductsLoading]);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined' || isProductsLoading || !catalogGridRef.current) return;
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const currentRects = new Map();
+
+    filteredProducts.forEach((product) => {
+      const cardNode = productCardRefs.current.get(product.id);
+      if (!cardNode) return;
+      currentRects.set(product.id, cardNode.getBoundingClientRect());
+    });
+
+    if (!hasMeasuredProductLayoutRef.current || motionQuery.matches) {
+      previousProductCardRectsRef.current = currentRects;
+      hasMeasuredProductLayoutRef.current = true;
+      return;
+    }
+
+    currentRects.forEach((currentRect, productId) => {
+      const cardNode = productCardRefs.current.get(productId);
+      if (!cardNode) return;
+
+      const previousRect = previousProductCardRectsRef.current.get(productId);
+      if (!previousRect) {
+        cardNode.animate(
+          [
+            { opacity: 0, transform: 'translate3d(0, 26px, 0) scale(0.96)' },
+            { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+          ],
+          {
+            duration: 520,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          },
+        );
+        return;
+      }
+
+      const deltaX = previousRect.left - currentRect.left;
+      const deltaY = previousRect.top - currentRect.top;
+
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+        return;
+      }
+
+      cardNode.animate(
+        [
+          {
+            transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(0.985)`,
+          },
+          {
+            transform: 'translate3d(0, 0, 0) scale(1)',
+          },
+        ],
+        {
+          duration: 560,
+          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        },
+      );
+    });
+
+    previousProductCardRectsRef.current = currentRects;
+    hasMeasuredProductLayoutRef.current = true;
+  }, [currentBadge, currentCategory, currentSortOption, filteredProductLayoutKey, isProductsLoading, normalizedSearchQuery]);
 
   const resetProductForm = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
@@ -1187,8 +1323,8 @@ export default function App() {
       className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-50 selection:bg-sky-300 selection:text-zinc-950"
     >
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-[-8rem] top-[-6rem] h-72 w-72 rounded-full bg-violet-500/10 blur-3xl" />
-        <div className="absolute right-[-8rem] top-36 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="parallax-blob-left absolute left-[-8rem] top-[-6rem] h-72 w-72 rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="parallax-blob-right absolute right-[-8rem] top-36 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
       </div>
 
       {toast && (
@@ -1350,14 +1486,16 @@ export default function App() {
         </div>
       )}
 
-      <section className="relative flex h-[70vh] items-center justify-center overflow-hidden">
-        <div className="animate-hero-image absolute inset-0 z-0">
-          <img src={HERO_IMAGE_URL} alt="Banda tocando ao vivo" className="h-full w-full object-cover opacity-25 grayscale" />
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-zinc-950/20"></div>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(147,197,253,0.18),transparent_38%),radial-gradient(circle_at_right,rgba(167,139,250,0.16),transparent_32%)]"></div>
+      <section ref={heroSectionRef} className="relative flex h-[70vh] items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <div ref={heroParallaxLayerRef} className="animate-hero-image hero-parallax-layer absolute inset-0">
+            <img src={HERO_IMAGE_URL} alt="Banda tocando ao vivo" className="h-full w-full object-cover opacity-25 grayscale" />
+            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-zinc-950/20"></div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(147,197,253,0.18),transparent_38%),radial-gradient(circle_at_right,rgba(167,139,250,0.16),transparent_32%)]"></div>
+          </div>
         </div>
 
-        <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center px-4 text-center">
+        <div ref={heroContentRef} className="hero-content-parallax relative z-10 mx-auto flex max-w-4xl flex-col items-center px-4 text-center">
           <span className="animate-hero-chip mb-4 block font-bold uppercase tracking-[0.3em] text-sky-300">Nova colecao</span>
           <h1 className="animate-hero-title mb-6 text-6xl font-black uppercase leading-none tracking-tighter md:text-8xl lg:text-9xl">
             Caos & <br />{' '}
@@ -1505,7 +1643,7 @@ export default function App() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:gap-8 lg:grid-cols-3">
+          <div ref={catalogGridRef} className="grid grid-cols-2 gap-4 md:gap-8 lg:grid-cols-3">
             {filteredProducts.map((product, index) => (
               (() => {
                 const productImageAssets = getProductImageAssets(product);
@@ -1520,10 +1658,11 @@ export default function App() {
                 return (
                   <div
                     key={product.id}
+                    ref={setProductCardRef(product.id)}
                     role="button"
                     tabIndex={0}
                     aria-label={`Abrir detalhes de ${product.name}`}
-                    className="scroll-reveal group relative min-w-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    className="scroll-reveal catalog-card-shell group relative min-w-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                     style={createRevealStyle(index, 70, 34)}
                     onClick={() => {
                       if (shouldIgnoreProductCardClick(product.id)) return;
@@ -2344,12 +2483,31 @@ export default function App() {
           animation: nav-entry 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         @keyframes hero-image-in {
-          from { opacity: 0; transform: scale(1.08); }
-          to { opacity: 1; transform: scale(1); }
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
         .animate-hero-image {
           animation: hero-image-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .parallax-blob-left,
+        .parallax-blob-right,
+        .hero-parallax-layer,
+        .hero-content-parallax,
+        .catalog-card-shell {
+          will-change: transform;
+        }
+        .parallax-blob-left {
+          transform: translate3d(0, var(--blob-left-offset, 0px), 0);
+        }
+        .parallax-blob-right {
+          transform: translate3d(0, var(--blob-right-offset, 0px), 0);
+        }
+        .hero-parallax-layer {
+          transform: translate3d(0, var(--hero-parallax-y, 0px), 0) scale(var(--hero-parallax-scale, 1.08));
           transform-origin: center;
+        }
+        .hero-content-parallax {
+          transform: translate3d(0, var(--hero-content-y, 0px), 0);
         }
         @keyframes hero-copy-in {
           from { opacity: 0; transform: translateY(30px); }
@@ -2433,6 +2591,12 @@ export default function App() {
             filter: none !important;
             transform: none !important;
             transition: none !important;
+          }
+          .parallax-blob-left,
+          .parallax-blob-right,
+          .hero-parallax-layer,
+          .hero-content-parallax {
+            transform: none !important;
           }
         }
       `,
