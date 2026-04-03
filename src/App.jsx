@@ -195,6 +195,13 @@ function renumberProducts(products) {
   }));
 }
 
+function createRevealStyle(index = 0, step = 90, distance = 28) {
+  return {
+    '--reveal-delay': `${index * step}ms`,
+    '--reveal-distance': `${distance}px`,
+  };
+}
+
 function normalizeImageAsset(image, index = 0) {
   if (!image) return null;
 
@@ -420,6 +427,7 @@ function isMissingProductError(error) {
 }
 
 export default function App() {
+  const appShellRef = useRef(null);
   const managerPanelScrollRef = useRef(null);
   const managerFormRef = useRef(null);
   const productNameInputRef = useRef(null);
@@ -629,6 +637,45 @@ export default function App() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const rootElement = appShellRef.current;
+    if (!rootElement) return undefined;
+
+    const revealElements = Array.from(rootElement.querySelectorAll('.scroll-reveal'));
+    if (revealElements.length === 0) {
+      return undefined;
+    }
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (motionQuery.matches || typeof window.IntersectionObserver !== 'function') {
+      revealElements.forEach((element) => element.classList.add('is-visible'));
+      return undefined;
+    }
+
+    const observer = new window.IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        });
+      },
+      {
+        threshold: 0.16,
+        rootMargin: '0px 0px -12% 0px',
+      },
+    );
+
+    revealElements.forEach((element) => {
+      if (element.classList.contains('is-visible')) return;
+      observer.observe(element);
+    });
+
+    return () => observer.disconnect();
+  }, [currentBadge, currentCategory, currentSortOption, filteredProducts.length, isProductsLoading, searchQuery]);
 
   const resetProductForm = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
@@ -1135,7 +1182,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-50 selection:bg-sky-300 selection:text-zinc-950">
+    <div
+      ref={appShellRef}
+      className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-50 selection:bg-sky-300 selection:text-zinc-950"
+    >
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-8rem] top-[-6rem] h-72 w-72 rounded-full bg-violet-500/10 blur-3xl" />
         <div className="absolute right-[-8rem] top-36 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
@@ -1159,7 +1209,7 @@ export default function App() {
         </div>
       </div>
 
-      <nav className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
+      <nav className="animate-nav-entry sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
             <button
@@ -1301,26 +1351,26 @@ export default function App() {
       )}
 
       <section className="relative flex h-[70vh] items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
+        <div className="animate-hero-image absolute inset-0 z-0">
           <img src={HERO_IMAGE_URL} alt="Banda tocando ao vivo" className="h-full w-full object-cover opacity-25 grayscale" />
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-zinc-950/20"></div>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(147,197,253,0.18),transparent_38%),radial-gradient(circle_at_right,rgba(167,139,250,0.16),transparent_32%)]"></div>
         </div>
 
         <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center px-4 text-center">
-          <span className="mb-4 block font-bold uppercase tracking-[0.3em] text-sky-300">Nova colecao</span>
-          <h1 className="mb-6 text-6xl font-black uppercase leading-none tracking-tighter md:text-8xl lg:text-9xl">
+          <span className="animate-hero-chip mb-4 block font-bold uppercase tracking-[0.3em] text-sky-300">Nova colecao</span>
+          <h1 className="animate-hero-title mb-6 text-6xl font-black uppercase leading-none tracking-tighter md:text-8xl lg:text-9xl">
             Caos & <br />{' '}
             <span className="bg-gradient-to-r from-violet-200 via-sky-200 to-indigo-200 bg-clip-text text-transparent">
               Poesia
             </span>
           </h1>
-          <p className="mb-10 max-w-lg text-lg font-medium text-zinc-300 md:text-xl">
+          <p className="animate-hero-copy mb-10 max-w-lg text-lg font-medium text-zinc-300 md:text-xl">
             A colecao oficial da nova turne mundial. Vista o som, seja a revolucao. Edicoes limitadas.
           </p>
           <a
             href="#catalogo"
-            className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 px-10 py-4 font-black uppercase tracking-widest text-zinc-950 transition-transform hover:scale-105"
+            className="animate-hero-cta inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 px-10 py-4 font-black uppercase tracking-widest text-zinc-950 transition-transform hover:scale-105"
           >
             Explorar colecao <ArrowRight className="h-5 w-5" />
           </a>
@@ -1329,7 +1379,10 @@ export default function App() {
 
       <main id="catalogo" className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
         <div className="mb-12 space-y-6">
-          <div className="flex flex-col items-center justify-between gap-6 text-center md:flex-row md:items-end md:text-left">
+          <div
+            className="scroll-reveal flex flex-col items-center justify-between gap-6 text-center md:flex-row md:items-end md:text-left"
+            style={createRevealStyle(0, 120)}
+          >
             <div>
               <h2 className="mb-2 text-4xl font-black uppercase tracking-tighter md:text-5xl">Merch oficial</h2>
               <p className="text-zinc-400">Garanta o seu antes que acabe.</p>
@@ -1347,7 +1400,10 @@ export default function App() {
             </label>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5">
+          <div
+            className="scroll-reveal rounded-3xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5"
+            style={createRevealStyle(1, 120)}
+          >
             <div className="flex flex-col gap-4">
               <div className="hide-scrollbar flex w-full justify-start gap-2 overflow-x-auto pb-2">
                 {categories.map((category) => (
@@ -1427,12 +1483,18 @@ export default function App() {
         </div>
 
         {isProductsLoading ? (
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/60 p-10 text-center">
+          <div
+            className="scroll-reveal rounded-3xl border border-zinc-800 bg-zinc-900/60 p-10 text-center"
+            style={createRevealStyle(2, 120)}
+          >
             <p className="text-lg font-semibold text-zinc-100">Carregando catalogo...</p>
             <p className="mt-3 text-zinc-400">Buscando produtos e galerias direto do servidor.</p>
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/60 p-10 text-center">
+          <div
+            className="scroll-reveal rounded-3xl border border-zinc-800 bg-zinc-900/60 p-10 text-center"
+            style={createRevealStyle(2, 120)}
+          >
             <p className="text-lg font-semibold text-zinc-100">
               {hasActiveCatalogFilters ? 'Nenhum produto combina com sua busca.' : 'Nenhum produto disponivel no momento.'}
             </p>
@@ -1444,7 +1506,7 @@ export default function App() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:gap-8 lg:grid-cols-3">
-            {filteredProducts.map((product) => (
+            {filteredProducts.map((product, index) => (
               (() => {
                 const productImageAssets = getProductImageAssets(product);
                 const productImages = productImageAssets.map((imageAsset) => imageAsset.url);
@@ -1461,7 +1523,8 @@ export default function App() {
                     role="button"
                     tabIndex={0}
                     aria-label={`Abrir detalhes de ${product.name}`}
-                    className="group relative min-w-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    className="scroll-reveal group relative min-w-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    style={createRevealStyle(index, 70, 34)}
                     onClick={() => {
                       if (shouldIgnoreProductCardClick(product.id)) return;
                       openProductModal(product.id, cardImageIndex);
@@ -2198,7 +2261,7 @@ export default function App() {
 
       <footer id="rodape" className="border-t border-zinc-900 bg-zinc-950 px-4 pb-10 pt-20 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-12 md:flex-row">
-          <div className="max-w-sm">
+          <div className="scroll-reveal max-w-sm" style={createRevealStyle(0, 120, 32)}>
             <a href="#" className="mb-6 block transition hover:opacity-90">
               <img
                 src={logoSrc}
@@ -2225,7 +2288,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-16">
+          <div className="scroll-reveal flex gap-16" style={createRevealStyle(1, 120, 32)}>
             <div className="flex flex-col gap-4">
               <h4 className="mb-2 font-black uppercase tracking-widest text-sky-300">Links</h4>
               <a href="#catalogo" className="text-sm font-bold uppercase tracking-wider text-zinc-400 hover:text-white">
@@ -2250,7 +2313,10 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mx-auto mt-20 flex max-w-7xl flex-col items-center justify-between gap-4 border-t border-zinc-900 pt-8 text-sm font-bold uppercase tracking-wider text-zinc-600 md:flex-row">
+        <div
+          className="scroll-reveal mx-auto mt-20 flex max-w-7xl flex-col items-center justify-between gap-4 border-t border-zinc-900 pt-8 text-sm font-bold uppercase tracking-wider text-zinc-600 md:flex-row"
+          style={createRevealStyle(2, 120, 24)}
+        >
           <p>2026 B'RITT OFICIAL. TODOS OS DIREITOS RESERVADOS.</p>
           <div className="flex gap-4">
             <a href="#" className="hover:text-zinc-400">
@@ -2269,6 +2335,37 @@ export default function App() {
         @keyframes marquee {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
+        }
+        @keyframes nav-entry {
+          from { opacity: 0; transform: translateY(-18px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-nav-entry {
+          animation: nav-entry 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        @keyframes hero-image-in {
+          from { opacity: 0; transform: scale(1.08); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-hero-image {
+          animation: hero-image-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+          transform-origin: center;
+        }
+        @keyframes hero-copy-in {
+          from { opacity: 0; transform: translateY(30px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-hero-chip {
+          animation: hero-copy-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+        }
+        .animate-hero-title {
+          animation: hero-copy-in 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
+        }
+        .animate-hero-copy {
+          animation: hero-copy-in 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+        }
+        .animate-hero-cta {
+          animation: hero-copy-in 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
         }
         .animate-marquee {
           animation: marquee 20s linear infinite;
@@ -2295,12 +2392,48 @@ export default function App() {
         .animate-modal-shell {
           animation: modal-shell-in 0.2s ease-out forwards;
         }
+        .scroll-reveal {
+          opacity: 0;
+          filter: blur(12px);
+          transform: translate3d(0, var(--reveal-distance, 28px), 0) scale(0.985);
+          transition:
+            opacity 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+            transform 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+            filter 0.72s ease;
+          transition-delay: var(--reveal-delay, 0ms);
+          will-change: opacity, transform, filter;
+        }
+        .scroll-reveal.is-visible {
+          opacity: 1;
+          filter: blur(0);
+          transform: translate3d(0, 0, 0) scale(1);
+        }
         .hide-scrollbar::-webkit-scrollbar {
           display: none;
         }
         .hide-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-marquee,
+          .animate-nav-entry,
+          .animate-hero-image,
+          .animate-hero-chip,
+          .animate-hero-title,
+          .animate-hero-copy,
+          .animate-hero-cta,
+          .animate-slide-in-right,
+          .animate-fade-in-up,
+          .animate-modal-shell {
+            animation: none !important;
+          }
+          .scroll-reveal {
+            opacity: 1 !important;
+            filter: none !important;
+            transform: none !important;
+            transition: none !important;
+          }
         }
       `,
         }}
