@@ -1446,7 +1446,11 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       {productForm.gallery.map((item, index) => (
                         <div key={item.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2">
-                          <div className="relative aspect-square overflow-hidden rounded-xl bg-zinc-900">
+                          <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                            <span>Preview vitrine</span>
+                            <span>{item.positionX}% / {item.positionY}%</span>
+                          </div>
+                          <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-zinc-900">
                             <img
                               src={item.previewUrl}
                               alt=""
