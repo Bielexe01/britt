@@ -1566,13 +1566,16 @@ export default function App() {
       {isManagerPanelOpen && (
         <div className="fixed inset-0 z-[60] px-4 py-6 sm:px-6 lg:px-8">
           <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm" onClick={closeManagerPanel}></div>
-          <div className="relative mx-auto flex max-h-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-800 p-6 sm:p-8">
+          <div className="relative mx-auto flex h-[92dvh] max-w-7xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-900 shadow-2xl">
+            <div className="flex flex-col gap-4 border-b border-zinc-800 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
               <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Painel do catalogo</p>
-                <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Gerenciar produtos</h2>
+                <p className="mb-2 text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Painel do catalogo</p>
+                <h2 className="text-2xl font-black uppercase tracking-tighter text-white sm:text-3xl">Gerenciar produtos</h2>
+                <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+                  Edite os dados, ajuste a capa e organize a ordem da vitrine sem sair desta tela.
+                </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={handleAdminLogout}
@@ -1591,8 +1594,18 @@ export default function App() {
               </div>
             </div>
 
-            <div ref={managerPanelScrollRef} className="grid flex-1 gap-8 overflow-y-auto p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr]">
-              <form ref={managerFormRef} className="grid gap-4" onSubmit={handleProductSubmit}>
+            <div ref={managerPanelScrollRef} className="grid min-h-0 flex-1 gap-5 overflow-hidden p-4 sm:p-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+              <form
+                ref={managerFormRef}
+                className="min-h-0 space-y-5 overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950/45 p-4 sm:p-5"
+                onSubmit={handleProductSubmit}
+              >
+                <div className="flex flex-col gap-2 border-b border-zinc-800 pb-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-500">Formulario do produto</p>
+                  <p className="text-sm text-zinc-400">
+                    Preencha os dados principais e ajuste a galeria antes de salvar.
+                  </p>
+                </div>
                 {editingProduct && (
                   <div className="rounded-3xl border border-sky-400/30 bg-sky-400/10 p-4">
                     <p className="text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Editando agora</p>
@@ -1665,23 +1678,28 @@ export default function App() {
                   </label>
                 </div>
 
-                <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Imagens do produto</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleProductImageUpload}
-                    className="block w-full cursor-pointer rounded-2xl border border-dashed border-zinc-700 bg-zinc-950 px-4 py-5 text-sm text-zinc-300 file:mr-4 file:rounded-full file:border-0 file:bg-sky-300 file:px-4 file:py-2 file:font-bold file:text-zinc-950 hover:border-sky-400"
-                  />
-                  <p className="text-sm text-zinc-500">
-                    Envie varias imagens de uma vez. A primeira vira a capa do produto.
-                  </p>
-                </label>
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-4">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Imagens do produto</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleProductImageUpload}
+                      className="block w-full cursor-pointer rounded-2xl border border-dashed border-zinc-700 bg-zinc-950 px-4 py-4 text-sm text-zinc-300 file:mr-4 file:rounded-full file:border-0 file:bg-sky-300 file:px-4 file:py-2 file:font-bold file:text-zinc-950 hover:border-sky-400"
+                    />
+                    <p className="text-sm text-zinc-500">
+                      Envie varias imagens de uma vez. A primeira vira a capa do produto.
+                    </p>
+                  </label>
+                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Galeria</span>
+                <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Galeria</span>
+                      <p className="mt-1 text-sm text-zinc-500">Ajuste o recorte e escolha qual imagem sera a capa.</p>
+                    </div>
                     <span className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
                       {productForm.gallery.length}/{MAX_IMAGES_PER_PRODUCT}
                     </span>
@@ -1692,10 +1710,10 @@ export default function App() {
                       Nenhuma imagem adicionada ainda.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       {productForm.gallery.map((item, index) => (
-                        <div key={item.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2">
-                          <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                        <div key={item.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-3">
+                          <div className="mb-3 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
                             <span>Preview vitrine</span>
                             <span>{item.positionX}% / {item.positionY}%</span>
                           </div>
@@ -1748,21 +1766,21 @@ export default function App() {
                                 Centralizar
                               </button>
                             </div>
-                            <div className="flex flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() => makeGalleryItemPrimary(item.id)}
-                              className="rounded-full border border-zinc-700 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
-                            >
-                              Tornar capa
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeGalleryItem(item.id)}
-                              className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-red-200 transition hover:border-red-300/40 hover:text-red-100"
-                            >
-                              Remover
-                            </button>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <button
+                                type="button"
+                                onClick={() => makeGalleryItemPrimary(item.id)}
+                                className="rounded-full border border-zinc-700 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
+                              >
+                                Tornar capa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeGalleryItem(item.id)}
+                                className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-red-200 transition hover:border-red-300/40 hover:text-red-100"
+                              >
+                                Remover
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1771,32 +1789,34 @@ export default function App() {
                   )}
                 </div>
 
-                <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Descricao</span>
-                  <textarea
-                    required
-                    rows="4"
-                    name="description"
-                    value={productForm.description}
-                    onChange={handleProductFieldChange}
-                    className={`${inputClassName} resize-none`}
-                    placeholder="Descreva o produto."
-                  />
-                </label>
+                <div className="grid gap-4">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Descricao</span>
+                    <textarea
+                      required
+                      rows="4"
+                      name="description"
+                      value={productForm.description}
+                      onChange={handleProductFieldChange}
+                      className={`${inputClassName} resize-none`}
+                      placeholder="Descreva o produto."
+                    />
+                  </label>
 
-                <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Detalhes</span>
-                  <textarea
-                    rows="3"
-                    name="details"
-                    value={productForm.details}
-                    onChange={handleProductFieldChange}
-                    className={`${inputClassName} resize-none`}
-                    placeholder="Separe por virgula: arte exclusiva, 100% algodao, edicao limitada"
-                  />
-                </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Detalhes</span>
+                    <textarea
+                      rows="3"
+                      name="details"
+                      value={productForm.details}
+                      onChange={handleProductFieldChange}
+                      className={`${inputClassName} resize-none`}
+                      placeholder="Separe por virgula: arte exclusiva, 100% algodao, edicao limitada"
+                    />
+                  </label>
+                </div>
 
-                <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+                <div className="grid gap-3 border-t border-zinc-800 pt-4 sm:grid-cols-2">
                   <button
                     type="submit"
                     disabled={isSubmittingProduct}
@@ -1820,27 +1840,37 @@ export default function App() {
                 </div>
               </form>
 
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
-                  A ordem abaixo define exatamente como os produtos aparecem para o cliente na vitrine. Use as setas para subir ou descer cada item.
+              <div className="min-h-0 overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950/45 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-2 border-b border-zinc-800 pb-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-500">Lista da vitrine</p>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      {products.length} {products.length === 1 ? 'produto cadastrado' : 'produtos cadastrados'}
+                    </p>
+                  </div>
+                  <p className="max-w-sm text-sm text-zinc-500">
+                    A ordem abaixo define exatamente como os produtos aparecem para o cliente.
+                  </p>
                 </div>
 
+                <div className="space-y-4">
+
                 {products.map((product, index) => (
-                  <div key={product.id} className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-4">
-                    <div className="mb-4 flex items-center justify-between gap-3">
+                  <div key={product.id} className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-4 sm:p-5">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-center gap-3">
                         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-xs font-black uppercase tracking-[0.2em] text-sky-300">
                           {String(index + 1).padStart(2, '0')}
                         </span>
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-500">Ordem da vitrine</p>
                           <p className="text-sm font-semibold text-zinc-200">
-                            {isReorderingProducts ? 'Salvando nova ordem...' : 'Ajuste quando quiser sem perder os dados.'}
+                            {isReorderingProducts ? 'Salvando nova ordem...' : 'Use as setas para reposicionar este item.'}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
                         <button
                           type="button"
                           aria-label={`Mover ${product.name} para cima`}
@@ -1862,16 +1892,16 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row">
                       <img
                         src={getPrimaryImage(product)}
                         alt={product.name}
-                        className="h-24 w-20 flex-shrink-0 rounded-2xl object-cover"
+                        className="h-28 w-full rounded-2xl object-cover sm:h-24 sm:w-20 sm:flex-shrink-0"
                         style={{ objectPosition: getImageObjectPosition(getPrimaryImageAsset(product)) }}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-lg font-black uppercase text-white">{product.name}</h3>
+                          <h3 className="truncate text-base font-black uppercase text-white sm:text-lg">{product.name}</h3>
                           {product.badge && (
                             <span className="rounded-full bg-zinc-800 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.25em] text-sky-300">
                               {product.badge}
@@ -1881,12 +1911,12 @@ export default function App() {
                         <p className="mt-2 text-xs font-bold uppercase tracking-[0.25em] text-zinc-500">
                           {product.category}
                         </p>
-                        <p className="mt-3 text-sm leading-6 text-zinc-300">{product.description}</p>
+                        <p className="mt-3 line-clamp-3 text-sm leading-6 text-zinc-300">{product.description}</p>
                         <p className="mt-3 text-base font-black text-sky-300">{formatPrice(product.price)}</p>
                       </div>
                     </div>
 
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <button
                         type="button"
                         onClick={() => startEditingProduct(product)}
@@ -1911,6 +1941,7 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
               </div>
             </div>
           </div>
