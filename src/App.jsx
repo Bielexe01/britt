@@ -1288,25 +1288,19 @@ export default function App() {
       )}
 
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center px-0 pt-8 sm:items-center sm:px-6 sm:py-6 lg:px-8">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center px-0 pt-4 sm:items-center sm:px-6 sm:py-6 lg:px-8">
           <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm" onClick={closeProductModal}></div>
-          <div
-            className={`animate-modal-shell relative w-full ${
-              isMobileViewport
-                ? ''
-                : 'max-w-5xl'
-            }`}
-          >
+          <div className="animate-modal-shell relative w-full sm:max-w-5xl">
             <div
               className={`relative flex w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl transition-transform duration-300 ${
                 isMobileViewport
-                  ? 'max-h-[92vh] rounded-t-[2rem] border-b-0 border-l-0 border-r-0'
+                  ? 'h-[88dvh] rounded-t-[2rem] border-b-0 border-l-0 border-r-0'
                   : 'max-h-[90vh] rounded-3xl lg:flex-row'
               }`}
               style={isMobileViewport ? { transform: `translateY(${modalDragOffset}px)` } : undefined}
             >
             <div
-              className={`flex items-center justify-center bg-zinc-900/95 py-3 ${isMobileViewport ? 'border-b border-zinc-800' : 'sr-only'}`}
+              className={`shrink-0 flex items-center justify-center bg-zinc-900/95 py-3 ${isMobileViewport ? 'border-b border-zinc-800' : 'sr-only'}`}
               onTouchStart={handleProductModalDragStart}
               onTouchMove={handleProductModalDragMove}
               onTouchEnd={handleProductModalDragEnd}
@@ -1318,21 +1312,25 @@ export default function App() {
               </div>
             </div>
 
-            <div className="relative min-h-[300px] bg-zinc-950 lg:w-1/2">
+            <div
+              className={`relative min-h-0 shrink-0 overflow-hidden bg-zinc-950 ${
+                isMobileViewport ? 'max-h-[38vh] w-full' : 'min-h-[300px] lg:w-1/2'
+              }`}
+            >
               {selectedProduct.badge && (
-                <div className="absolute left-6 top-6 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-3 py-1 text-xs font-black uppercase tracking-widest text-zinc-950">
+                <div className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-zinc-950 sm:left-6 sm:top-6 sm:text-xs">
                   {selectedProduct.badge}
                 </div>
               )}
               <img src={activeProductImage} alt={selectedProduct.name} className="h-full w-full object-cover" />
               {selectedProductImages.length > 1 && (
-                <div className="absolute inset-x-0 bottom-0 flex gap-3 overflow-x-auto bg-gradient-to-t from-zinc-950/95 via-zinc-950/70 to-transparent p-4">
+                <div className="absolute inset-x-0 bottom-0 flex gap-3 overflow-x-auto bg-gradient-to-t from-zinc-950/95 via-zinc-950/70 to-transparent p-3 sm:p-4">
                   {selectedProductImages.map((image, index) => (
                     <button
                       key={`${selectedProduct.id}-${image}-${index}`}
                       type="button"
                       onClick={() => setActiveProductImageIndex(index)}
-                      className={`h-20 w-16 flex-shrink-0 overflow-hidden rounded-xl border transition ${
+                      className={`h-16 w-14 flex-shrink-0 overflow-hidden rounded-xl border transition sm:h-20 sm:w-16 ${
                         currentProductImageIndex === index
                           ? 'border-sky-300'
                           : 'border-zinc-700 hover:border-zinc-500'
@@ -1345,24 +1343,24 @@ export default function App() {
               )}
             </div>
 
-            <div className="flex flex-1 flex-col">
-              <div className="flex items-start justify-between gap-4 border-b border-zinc-800 p-6 sm:p-8">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="shrink-0 flex items-start justify-between gap-4 border-b border-zinc-800 p-5 sm:p-8">
                 <div>
                   <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-sky-300">{selectedProduct.category}</p>
-                  <h3 className="text-3xl font-black uppercase leading-none tracking-tighter text-white sm:text-4xl">
+                  <h3 className="text-2xl font-black uppercase leading-none tracking-tighter text-white sm:text-4xl">
                     {selectedProduct.name}
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={closeProductModal}
-                  className="rounded-full bg-zinc-800 p-3 text-zinc-400 transition hover:text-white"
+                  className="shrink-0 rounded-full bg-zinc-800 p-3 text-zinc-400 transition hover:text-white"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-8">
                 <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span className="text-3xl font-black text-sky-300">{formatPrice(selectedProduct.price)}</span>
                   <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-500">Entrega em ate 7 dias uteis</span>
@@ -1370,7 +1368,7 @@ export default function App() {
 
                 <p className="mb-8 text-base leading-7 text-zinc-300">{selectedProduct.description}</p>
 
-                <div className="mb-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {selectedProduct.details.map((detail) => (
                     <div
                       key={detail}
@@ -1380,7 +1378,9 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </div>
 
+              <div className="shrink-0 border-t border-zinc-800 bg-zinc-900/95 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:p-8 sm:pb-8">
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
                   <div>
                     <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-zinc-500">Quantidade</p>
@@ -1406,7 +1406,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={addSelectedProductToCart}
-                    className="flex items-center justify-center gap-3 rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 px-8 py-4 font-black uppercase tracking-widest text-zinc-950 transition-transform hover:scale-[1.01] sm:flex-1"
+                    className="flex w-full items-center justify-center gap-3 rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 px-8 py-4 font-black uppercase tracking-widest text-zinc-950 transition-transform hover:scale-[1.01] sm:flex-1"
                   >
                     <ShoppingBag className="h-5 w-5" />
                     Adicionar ao carrinho
