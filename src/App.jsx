@@ -237,7 +237,7 @@ function buildWhatsAppCheckoutMessage(cartItems, total) {
 
   return [
     "Ola! Quero finalizar este pedido da loja B'RITT:",
-    '',
+    
     ...orderLines.flatMap((line) => [line, '']),
     `Total do pedido: ${formatPrice(total)}`,
   ].join('\n');
