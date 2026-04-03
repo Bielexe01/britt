@@ -1194,7 +1194,7 @@ export default function App() {
             <p className="mt-3 text-zinc-400">Abra o painel no menu para adicionar um novo item.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 md:gap-8 lg:grid-cols-3">
             {filteredProducts.map((product) => (
               (() => {
                 const productImageAssets = getProductImageAssets(product);
@@ -1212,7 +1212,7 @@ export default function App() {
                     role="button"
                     tabIndex={0}
                     aria-label={`Abrir detalhes de ${product.name}`}
-                    className="group relative cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    className="group relative min-w-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                     onClick={() => {
                       if (shouldIgnoreProductCardClick(product.id)) return;
                       openProductModal(product.id, cardImageIndex);
@@ -1220,17 +1220,17 @@ export default function App() {
                     onKeyDown={(event) => handleProductCardKeyDown(event, product.id)}
                   >
                 <div
-                  className="relative mb-4 aspect-[4/5] overflow-hidden rounded-lg bg-zinc-900"
+                  className="relative mb-3 aspect-[4/5] overflow-hidden rounded-lg bg-zinc-900 md:mb-4"
                   onTouchStart={(event) => handleProductCardTouchStart(product.id, event)}
                   onTouchEnd={(event) => handleProductCardTouchEnd(product.id, productImages.length, event)}
                 >
                   {product.badge && (
-                    <div className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-3 py-1 text-xs font-black uppercase tracking-widest text-zinc-950">
+                    <div className="absolute left-2 top-2 z-10 rounded-full bg-gradient-to-r from-violet-300 to-sky-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-950 md:left-4 md:top-4 md:px-3 md:text-xs md:tracking-widest">
                       {product.badge}
                     </div>
                   )}
                   {productImages.length > 1 && (
-                    <div className="absolute right-4 top-4 z-10 rounded-full bg-zinc-950/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-100">
+                    <div className="absolute right-2 top-2 z-10 rounded-full bg-zinc-950/80 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-100 md:right-4 md:top-4 md:px-3 md:text-[11px] md:tracking-[0.2em]">
                       {cardImageIndex + 1}/{productImages.length}
                     </div>
                   )}
@@ -1300,10 +1300,10 @@ export default function App() {
                 <div>
                   <p className="mb-1 text-sm font-bold uppercase tracking-widest text-zinc-500">{product.category}</p>
                   <div className="flex items-start justify-between gap-4">
-                    <h3 className="text-lg font-bold uppercase leading-tight transition-colors group-hover:text-sky-300 md:text-xl">
+                    <h3 className="text-sm font-bold uppercase leading-tight transition-colors group-hover:text-sky-300 sm:text-base md:text-xl">
                       {product.name}
                     </h3>
-                    <span className="whitespace-nowrap text-lg font-black">{formatPrice(product.price)}</span>
+                    <span className="whitespace-nowrap text-sm font-black sm:text-base md:text-lg">{formatPrice(product.price)}</span>
                   </div>
                 </div>
                   </div>
