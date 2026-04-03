@@ -26,6 +26,7 @@ const MAX_IMAGES_PER_PRODUCT = 8;
 const MOBILE_BREAKPOINT = 1024;
 const PRODUCT_SWIPE_THRESHOLD = 36;
 const MODAL_DRAG_CLOSE_THRESHOLD = 120;
+const WHATSAPP_PHONE_NUMBER = String(import.meta.env.VITE_WHATSAPP_PHONE_NUMBER ?? '').replace(/\D/g, '');
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -211,6 +212,34 @@ function buildProductPayload(draft) {
 
 function formatPrice(value) {
   return priceFormatter.format(value);
+}
+
+function buildWhatsAppCheckoutMessage(cartItems, total) {
+  const orderLines = cartItems.map((item, index) => {
+    const itemTotal = item.price * item.quantity;
+    return [
+      `${index + 1}. ${item.name}`,
+      `Quantidade: ${item.quantity}`,
+      `Valor unitario: ${formatPrice(item.price)}`,
+      `Subtotal: ${formatPrice(itemTotal)}`,
+    ].join('\n');
+  });
+
+  return [
+    "Ola! Quero finalizar este pedido da loja B'RITT:",
+    '',
+    ...orderLines.flatMap((line) => [line, '']),
+    `Total do pedido: ${formatPrice(total)}`,
+  ].join('\n');
+}
+
+function buildWhatsAppCheckoutUrl(cartItems, total) {
+  if (!WHATSAPP_PHONE_NUMBER) {
+    return null;
+  }
+
+  const message = buildWhatsAppCheckoutMessage(cartItems, total);
+  return `https://wa.me/${WHATSAPP_PHONE_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
 function getWrappedImageIndex(currentIndex, imagesLength, step) {
@@ -542,6 +571,19 @@ export default function App() {
 
   const removeFromCart = (id) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== id));
+  };
+
+  const handleCheckoutOnWhatsApp = () => {
+    const checkoutUrl = buildWhatsAppCheckoutUrl(cart, cartTotal);
+
+    if (!checkoutUrl) {
+      showToast('Configure o numero em VITE_WHATSAPP_PHONE_NUMBER para finalizar no WhatsApp.');
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.location.href = checkoutUrl;
+    }
   };
 
   const openProductModal = (productId, startingImageIndex = 0) => {
@@ -1482,9 +1524,10 @@ export default function App() {
                 </div>
                 <button
                   type="button"
+                  onClick={handleCheckoutOnWhatsApp}
                   className="w-full rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 py-4 text-lg font-black uppercase tracking-widest text-zinc-950 transition-transform hover:scale-[1.02]"
                 >
-                  Finalizar compra
+                  Finalizar no WhatsApp
                 </button>
               </div>
             )}

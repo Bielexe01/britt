@@ -47,6 +47,7 @@ O projeto agora tambem esta pronto para deploy na Vercel com:
    - `DATABASE_TABLE`
    - `CLOUDINARY_URL`
    - `CLOUDINARY_FOLDER`
+   - `VITE_WHATSAPP_PHONE_NUMBER`
 6. Rode o deploy.
 7. Depois do deploy, valide:
    - `https://SEU-DOMINIO.vercel.app/api/health`
@@ -99,6 +100,16 @@ Depois disso, a aplicacao consegue usar a role restrita em runtime. Quando a tab
 - Cada produto aceita ate 8 imagens.
 - A primeira imagem da galeria vira a capa.
 - Sem Cloudinary configurado, os uploads ficam em `server/uploads/`.
+
+## Checkout por WhatsApp
+
+Para o botao do carrinho abrir uma conversa pronta no WhatsApp, configure:
+
+```env
+VITE_WHATSAPP_PHONE_NUMBER=5511999999999
+```
+
+Use o numero no formato internacional, so com digitos, incluindo o DDI do Brasil (`55`).
 
 ## Cloudinary para producao
 
