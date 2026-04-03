@@ -225,10 +225,11 @@ function formatPrice(value) {
 }
 
 function buildWhatsAppCheckoutMessage(cartItems, total) {
+  const totalItems = cartItems.reduce((count, item) => count + item.quantity, 0);
   const orderLines = cartItems.map((item, index) => {
     const itemTotal = item.price * item.quantity;
     return [
-      `${index + 1}. ${item.name}`,
+      `*${index + 1}. ${item.name}*`,
       `Quantidade: ${item.quantity}`,
       `Valor unitario: ${formatPrice(item.price)}`,
       `Subtotal: ${formatPrice(itemTotal)}`,
@@ -236,10 +237,18 @@ function buildWhatsAppCheckoutMessage(cartItems, total) {
   });
 
   return [
-    "Ola! Quero finalizar este pedido da loja B'RITT:",
-    
+    "*Novo pedido - Loja B'RITT*",
+    '',
+    'Ola! Quero finalizar esta compra com os itens abaixo:',
+    '',
+    '*Itens do pedido*',
     ...orderLines.flatMap((line) => [line, '']),
+    '*Resumo*',
+    `Produtos diferentes: ${cartItems.length}`,
+    `Quantidade total de itens: ${totalItems}`,
     `Total do pedido: ${formatPrice(total)}`,
+    '',
+    'Pode me confirmar a disponibilidade e as formas de pagamento?',
   ].join('\n');
 }
 
