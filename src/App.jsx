@@ -236,6 +236,8 @@ export default function App() {
   const managerPanelScrollRef = useRef(null);
   const managerFormRef = useRef(null);
   const productNameInputRef = useRef(null);
+  const isSubmittingProductRef = useRef(false);
+  const removingProductIdRef = useRef(null);
   const modalDragStateRef = useRef({ startY: 0, isDragging: false });
   const productCardTouchStateRef = useRef({});
   const suppressedProductClickRef = useRef({ productId: null, timestamp: 0 });
@@ -636,6 +638,9 @@ export default function App() {
 
   const handleProductSubmit = async (event) => {
     event.preventDefault();
+    if (isSubmittingProductRef.current) return;
+
+    isSubmittingProductRef.current = true;
     setIsSubmittingProduct(true);
 
     try {
@@ -697,15 +702,17 @@ export default function App() {
 
       showToast(error.message || 'Nao foi possivel salvar o produto.');
     } finally {
+      isSubmittingProductRef.current = false;
       setIsSubmittingProduct(false);
     }
   };
 
   const removeProduct = async (productId) => {
     const productToRemove = products.find((product) => product.id === productId);
-    if (!productToRemove || removingProductId === productId) return;
+    if (!productToRemove || removingProductIdRef.current === productId) return;
 
     try {
+      removingProductIdRef.current = productId;
       setRemovingProductId(productId);
 
       const currentServerProduct = await findServerProductById(productId);
@@ -731,6 +738,7 @@ export default function App() {
 
       showToast(error.message || 'Nao foi possivel remover o produto.');
     } finally {
+      removingProductIdRef.current = null;
       setRemovingProductId(null);
     }
   };

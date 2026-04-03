@@ -880,7 +880,7 @@ app.put('/api/products/:id', upload.array('images', MAX_IMAGES_PER_PRODUCT), asy
 app.delete('/api/products/:id', async (req, res) => {
   const removedProduct = await deleteProductRecord(req.params.id);
   if (!removedProduct) {
-    res.status(404).json({ message: 'Produto nao encontrado.' });
+    res.status(204).end();
     return;
   }
 
