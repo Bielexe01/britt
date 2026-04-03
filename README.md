@@ -48,6 +48,8 @@ O projeto agora tambem esta pronto para deploy na Vercel com:
    - `CLOUDINARY_URL`
    - `CLOUDINARY_FOLDER`
    - `VITE_WHATSAPP_PHONE_NUMBER`
+   - `VITE_ADMIN_USERNAME`
+   - `VITE_ADMIN_PASSWORD`
 6. Rode o deploy.
 7. Depois do deploy, valide:
    - `https://SEU-DOMINIO.vercel.app/api/health`
@@ -110,6 +112,21 @@ VITE_WHATSAPP_PHONE_NUMBER=5511999999999
 ```
 
 Use o numero no formato internacional, so com digitos, incluindo o DDI do Brasil (`55`).
+
+## Login de admin
+
+O acesso ao botao `Gerenciar` agora pede login de administrador no frontend.
+
+Voce pode trocar as credenciais padrao configurando:
+
+```env
+VITE_ADMIN_USERNAME=admin
+VITE_ADMIN_PASSWORD=britt2026
+```
+
+Se mudar essas variaveis na Vercel, faca um novo deploy para atualizar o site publicado.
+
+Esse bloqueio protege a interface do painel, mas nao substitui uma autenticacao real de backend.
 
 ## Cloudinary para producao
 

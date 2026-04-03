@@ -3,6 +3,8 @@ import {
   ShoppingBag,
   X,
   Menu,
+  Lock,
+  LogOut,
   Camera,
   Music2,
   ArrowRight,
@@ -27,6 +29,9 @@ const MOBILE_BREAKPOINT = 1024;
 const PRODUCT_SWIPE_THRESHOLD = 36;
 const MODAL_DRAG_CLOSE_THRESHOLD = 120;
 const WHATSAPP_PHONE_NUMBER = String(import.meta.env.VITE_WHATSAPP_PHONE_NUMBER ?? '').replace(/\D/g, '');
+const ADMIN_USERNAME = String(import.meta.env.VITE_ADMIN_USERNAME ?? 'admin').trim();
+const ADMIN_PASSWORD = String(import.meta.env.VITE_ADMIN_PASSWORD ?? 'britt2026').trim();
+const ADMIN_SESSION_STORAGE_KEY = 'britt-admin-authenticated';
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -116,6 +121,11 @@ const EMPTY_PRODUCT_FORM = {
   description: '',
   details: '',
   gallery: [],
+};
+
+const EMPTY_ADMIN_LOGIN_FORM = {
+  username: '',
+  password: '',
 };
 
 const inputClassName =
@@ -276,6 +286,8 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManagerPanelOpen, setIsManagerPanelOpen] = useState(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isProductsLoading, setIsProductsLoading] = useState(true);
   const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
   const [activeCategory, setActiveCategory] = useState('Todos');
@@ -284,6 +296,7 @@ export default function App() {
   const [activeProductImageIndex, setActiveProductImageIndex] = useState(0);
   const [productCardImageIndexes, setProductCardImageIndexes] = useState({});
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
+  const [adminLoginForm, setAdminLoginForm] = useState(EMPTY_ADMIN_LOGIN_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
   const [removingProductId, setRemovingProductId] = useState(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -358,6 +371,13 @@ export default function App() {
 
     mediaQuery.addListener(syncViewport);
     return () => mediaQuery.removeListener(syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const persistedAdminSession = window.sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+    setIsAdminAuthenticated(persistedAdminSession === 'true');
   }, []);
 
   useEffect(() => {
@@ -537,12 +557,58 @@ export default function App() {
   };
 
   const openManagerPanel = () => {
-    setIsManagerPanelOpen(true);
     setIsMenuOpen(false);
+
+    if (!isAdminAuthenticated) {
+      setIsAdminLoginOpen(true);
+      return;
+    }
+
+    setIsManagerPanelOpen(true);
   };
 
   const closeManagerPanel = () => {
     setIsManagerPanelOpen(false);
+  };
+
+  const closeAdminLogin = () => {
+    setIsAdminLoginOpen(false);
+    setAdminLoginForm(EMPTY_ADMIN_LOGIN_FORM);
+  };
+
+  const handleAdminLoginFieldChange = (event) => {
+    const { name, value } = event.target;
+    setAdminLoginForm((prevForm) => ({ ...prevForm, [name]: value }));
+  };
+
+  const handleAdminLoginSubmit = (event) => {
+    event.preventDefault();
+
+    const username = adminLoginForm.username.trim();
+    const password = adminLoginForm.password;
+
+    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+      showToast('Login de admin invalido.');
+      return;
+    }
+
+    setIsAdminAuthenticated(true);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, 'true');
+    }
+    closeAdminLogin();
+    setIsManagerPanelOpen(true);
+    showToast('Login de admin realizado com sucesso.');
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    }
+    setIsManagerPanelOpen(false);
+    resetProductForm();
+    showToast('Sessao de admin encerrada.');
   };
 
   const addToCart = (product, quantity = 1) => {
@@ -864,6 +930,66 @@ export default function App() {
         </div>
       )}
 
+      {isAdminLoginOpen && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center px-4 py-6 sm:px-6">
+          <div className="absolute inset-0 bg-zinc-950/90 backdrop-blur-sm" onClick={closeAdminLogin}></div>
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-zinc-800 p-6">
+              <div>
+                <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Area restrita</p>
+                <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Login admin</h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeAdminLogin}
+                className="rounded-full bg-zinc-800 p-3 text-zinc-400 transition hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form className="grid gap-5 p-6" onSubmit={handleAdminLoginSubmit}>
+              <p className="text-sm leading-6 text-zinc-400">
+                Entre com o usuario e a senha de administrador para abrir o painel de gerenciamento.
+              </p>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Usuario</span>
+                <input
+                  required
+                  name="username"
+                  value={adminLoginForm.username}
+                  onChange={handleAdminLoginFieldChange}
+                  className={inputClassName}
+                  placeholder="admin"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">Senha</span>
+                <input
+                  required
+                  name="password"
+                  type="password"
+                  value={adminLoginForm.password}
+                  onChange={handleAdminLoginFieldChange}
+                  className={inputClassName}
+                  placeholder="Digite sua senha"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-300 via-indigo-300 to-sky-300 px-7 py-4 font-black uppercase tracking-[0.25em] text-zinc-950 transition-transform hover:scale-[1.01]"
+              >
+                <Lock className="h-5 w-5" />
+                Entrar no painel
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <section className="relative flex h-[70vh] items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img src={HERO_IMAGE_URL} alt="Banda tocando ao vivo" className="h-full w-full object-cover opacity-25 grayscale" />
@@ -1053,13 +1179,23 @@ export default function App() {
                 <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-sky-300">Painel do catalogo</p>
                 <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Gerenciar produtos</h2>
               </div>
-              <button
-                type="button"
-                onClick={closeManagerPanel}
-                className="rounded-full bg-zinc-800 p-3 text-zinc-400 transition hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleAdminLogout}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-zinc-100 transition hover:border-sky-400 hover:text-sky-300"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sair
+                </button>
+                <button
+                  type="button"
+                  onClick={closeManagerPanel}
+                  className="rounded-full bg-zinc-800 p-3 text-zinc-400 transition hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div ref={managerPanelScrollRef} className="grid flex-1 gap-8 overflow-y-auto p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr]">
