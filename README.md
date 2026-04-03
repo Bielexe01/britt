@@ -30,7 +30,7 @@ Quando existir `dist/index.html`, o backend tambem serve o frontend. Se o build 
 O projeto agora tambem esta pronto para deploy na Vercel com:
 
 - frontend estatico saindo de `dist/`
-- API Express publicada em `api/[...route].js`
+- API Express publicada em `api/health.js`, `api/products/index.js` e `api/products/[id].js`
 - configuracao em `vercel.json`
 
 ### Passo a passo
