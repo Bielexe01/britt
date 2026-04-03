@@ -294,11 +294,6 @@ export default function App() {
     return normalizedProducts;
   };
 
-  const findServerProductById = async (productId) => {
-    const latestProducts = await syncProductsWithServer();
-    return latestProducts.find((product) => product.id === productId) ?? null;
-  };
-
   const handleMissingProduct = async (productId) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
 
@@ -613,45 +608,29 @@ export default function App() {
     setProductForm((prevForm) => ({ ...prevForm, [name]: value }));
   };
 
-  const startEditingProduct = async (product) => {
-    let productToEdit = product;
-
-    try {
-      const currentServerProduct = await findServerProductById(product.id);
-      if (!currentServerProduct) {
-        await handleMissingProduct(product.id);
-        return;
-      }
-
-      productToEdit = currentServerProduct;
-    } catch {
-      // Keep the local product if the sync fails temporarily.
-    }
-
+  const startEditingProduct = (product) => {
     closeProductModal();
     setIsMenuOpen(false);
-    setEditingProductId(productToEdit.id);
-    setProductForm(formatProductToForm(productToEdit));
+    setEditingProductId(product.id);
+    setProductForm(formatProductToForm(product));
     setIsManagerPanelOpen(true);
-    showToast(`${productToEdit.name} pronto para editar.`);
+    showToast(`${product.name} pronto para editar.`);
   };
 
   const handleProductSubmit = async (event) => {
     event.preventDefault();
     if (isSubmittingProductRef.current) return;
 
+    if (!event.currentTarget.checkValidity()) {
+      event.currentTarget.reportValidity();
+      showToast('Preencha nome, preco, categoria e descricao para salvar.');
+      return;
+    }
+
     isSubmittingProductRef.current = true;
     setIsSubmittingProduct(true);
 
     try {
-      if (editingProductId) {
-        const currentServerProduct = await findServerProductById(editingProductId);
-        if (!currentServerProduct) {
-          await handleMissingProduct(editingProductId);
-          return;
-        }
-      }
-
       const payload = buildProductPayload(productForm);
       const formData = new FormData();
 
@@ -714,12 +693,6 @@ export default function App() {
     try {
       removingProductIdRef.current = productId;
       setRemovingProductId(productId);
-
-      const currentServerProduct = await findServerProductById(productId);
-      if (!currentServerProduct) {
-        await handleMissingProduct(productId);
-        return;
-      }
 
       await deleteProduct(productId);
 
