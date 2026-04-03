@@ -1515,7 +1515,7 @@ export default function App() {
                           event.stopPropagation();
                           cycleProductCardImage(product.id, productImages.length, -1);
                         }}
-                        className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-100 transition hover:bg-zinc-950 lg:opacity-0 lg:group-hover:opacity-100"
+                        className="absolute left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-0 transition hover:bg-zinc-950 lg:inline-flex lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
@@ -1527,7 +1527,7 @@ export default function App() {
                           event.stopPropagation();
                           cycleProductCardImage(product.id, productImages.length, 1);
                         }}
-                        className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-100 transition hover:bg-zinc-950 lg:opacity-0 lg:group-hover:opacity-100"
+                        className="absolute right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-zinc-950/75 p-2 text-zinc-100 opacity-0 transition hover:bg-zinc-950 lg:inline-flex lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
