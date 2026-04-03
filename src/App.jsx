@@ -1046,11 +1046,15 @@ export default function App() {
       );
 
       if (isEditingProduct) {
-        setProducts((prevProducts) =>
-          sortProductsForDisplay(
-            prevProducts.map((product) => (product.id === editingProductId ? savedProduct : product)),
-          ),
-        );
+        try {
+          await syncProductsWithServer();
+        } catch {
+          setProducts((prevProducts) =>
+            sortProductsForDisplay(
+              prevProducts.map((product) => (product.id === editingProductId ? savedProduct : product)),
+            ),
+          );
+        }
       } else {
         try {
           await syncProductsWithServer();

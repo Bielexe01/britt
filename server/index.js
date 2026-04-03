@@ -43,6 +43,7 @@ const { Pool } = pg;
 let appReadyPromise;
 let frontendServingConfigured = false;
 let missingFrontendBuildLogged = false;
+let postgresDisplayOrderAvailable = false;
 
 if (USE_CLOUDINARY && !CLOUDINARY_URL) {
   cloudinary.config({
@@ -572,6 +573,28 @@ function getProductsTableRef() {
   return `${quoteIdentifier(DATABASE_SCHEMA)}.${quoteIdentifier(DATABASE_TABLE)}`;
 }
 
+function getPostgresProductsSelectClause() {
+  return `
+    id,
+    name,
+    price::float8 AS price,
+    category,
+    images,
+    ${postgresDisplayOrderAvailable ? 'display_order AS "displayOrder",' : ''}
+    badge,
+    description,
+    details,
+    created_at AS "createdAt",
+    updated_at AS "updatedAt"
+  `;
+}
+
+function getPostgresProductsOrderByClause() {
+  return postgresDisplayOrderAvailable
+    ? 'ORDER BY display_order ASC, created_at DESC, id ASC'
+    : 'ORDER BY created_at DESC, id ASC';
+}
+
 async function doesProductsTableExist() {
   const result = await pool.query('SELECT to_regclass($1) AS table_name', [
     `${DATABASE_SCHEMA}.${DATABASE_TABLE}`,
@@ -651,24 +674,33 @@ async function ensureProductsTable() {
 async function ensureProductsDisplayOrderColumn() {
   const productsTableRef = getProductsTableRef();
 
-  if (!(await doesProductsColumnExist('display_order'))) {
-    try {
-      await pool.query(`ALTER TABLE ${productsTableRef} ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0`);
-    } catch (error) {
-      if (!/already exists/i.test(error.message)) {
-        if (!/permission denied/i.test(error.message)) {
-          throw error;
-        }
-
-        const columnExists = await doesProductsColumnExist('display_order');
-        if (!columnExists) {
-          throw error;
-        }
-      }
-    }
+  if (await doesProductsColumnExist('display_order')) {
+    postgresDisplayOrderAvailable = true;
+    await compactPostgresDisplayOrder();
+    return;
   }
 
-  await compactPostgresDisplayOrder();
+  try {
+    await pool.query(`ALTER TABLE ${productsTableRef} ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0`);
+    postgresDisplayOrderAvailable = true;
+    await compactPostgresDisplayOrder();
+  } catch (error) {
+    if (/already exists/i.test(error.message)) {
+      postgresDisplayOrderAvailable = true;
+      await compactPostgresDisplayOrder();
+      return;
+    }
+
+    if (/permission denied|must be owner of table/i.test(error.message)) {
+      postgresDisplayOrderAvailable = false;
+      console.warn(
+        `Nao foi possivel criar a coluna display_order em ${DATABASE_SCHEMA}.${DATABASE_TABLE}. A API vai seguir em modo legado ate a migracao ser aplicada por um owner da tabela.`,
+      );
+      return;
+    }
+
+    throw error;
+  }
 }
 
 function formatStartupError(error) {
@@ -775,22 +807,12 @@ async function listProducts() {
     const productsTableRef = getProductsTableRef();
     const result = await pool.query(`
       SELECT
-        id,
-        name,
-        price::float8 AS price,
-        category,
-        images,
-        display_order AS "displayOrder",
-        badge,
-        description,
-        details,
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
+        ${getPostgresProductsSelectClause()}
       FROM ${productsTableRef}
-      ORDER BY display_order ASC, created_at DESC, id ASC
+      ${getPostgresProductsOrderByClause()}
     `);
 
-    return result.rows.map(normalizeProduct);
+    return result.rows.map((product, index) => normalizeProduct(product, index));
   }
 
   await db.read();
@@ -803,17 +825,7 @@ async function getProductById(productId) {
     const result = await pool.query(
       `
         SELECT
-          id,
-          name,
-          price::float8 AS price,
-          category,
-          images,
-          display_order AS "displayOrder",
-          badge,
-          description,
-          details,
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          ${getPostgresProductsSelectClause()}
         FROM ${productsTableRef}
         WHERE id = $1
       `,
@@ -831,54 +843,77 @@ async function getProductById(productId) {
 async function createProductRecord(product) {
   if (USE_POSTGRES) {
     const productsTableRef = getProductsTableRef();
-    const client = await pool.connect();
+    if (postgresDisplayOrderAvailable) {
+      const client = await pool.connect();
 
-    try {
-      await client.query('BEGIN');
-      await client.query(`UPDATE ${productsTableRef} SET display_order = COALESCE(display_order, 0) + 1`);
+      try {
+        await client.query('BEGIN');
+        await client.query(`UPDATE ${productsTableRef} SET display_order = COALESCE(display_order, 0) + 1`);
 
-      const result = await client.query(
-        `
-          INSERT INTO ${productsTableRef}
-            (id, name, price, category, images, display_order, badge, description, details, created_at, updated_at)
-          VALUES
-            ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
-          RETURNING
-            id,
-            name,
-            price::float8 AS price,
-            category,
-            images,
-            display_order AS "displayOrder",
-            badge,
-            description,
-            details,
-            created_at AS "createdAt",
-            updated_at AS "updatedAt"
-        `,
-        [
-          product.id,
-          product.name,
-          product.price,
-          product.category,
-          JSON.stringify(product.imageAssets),
-          0,
-          product.badge,
-          product.description,
-          JSON.stringify(product.details),
-          product.createdAt,
-          product.updatedAt,
-        ],
-      );
+        const result = await client.query(
+          `
+            INSERT INTO ${productsTableRef}
+              (id, name, price, category, images, display_order, badge, description, details, created_at, updated_at)
+            VALUES
+              ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
+            RETURNING
+              ${getPostgresProductsSelectClause()}
+          `,
+          [
+            product.id,
+            product.name,
+            product.price,
+            product.category,
+            JSON.stringify(product.imageAssets),
+            0,
+            product.badge,
+            product.description,
+            JSON.stringify(product.details),
+            product.createdAt,
+            product.updatedAt,
+          ],
+        );
 
-      await client.query('COMMIT');
-      return normalizeProduct(result.rows[0]);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+        await client.query('COMMIT');
+        return normalizeProduct(result.rows[0]);
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     }
+
+    const result = await pool.query(
+      `
+        INSERT INTO ${productsTableRef}
+          (id, name, price, category, images, badge, description, details, created_at, updated_at)
+        VALUES
+          ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
+        RETURNING
+          ${getPostgresProductsSelectClause()}
+      `,
+      [
+        product.id,
+        product.name,
+        product.price,
+        product.category,
+        JSON.stringify(product.imageAssets),
+        product.badge,
+        product.description,
+        JSON.stringify(product.details),
+        product.createdAt,
+        product.updatedAt,
+      ],
+    );
+
+    return normalizeProduct(
+      {
+        ...result.rows[0],
+        displayOrder: 0,
+      },
+      0,
+    );
   }
 
   await db.read();
@@ -896,6 +931,41 @@ async function createProductRecord(product) {
 async function updateProductRecord(productId, product) {
   if (USE_POSTGRES) {
     const productsTableRef = getProductsTableRef();
+    if (postgresDisplayOrderAvailable) {
+      const result = await pool.query(
+        `
+          UPDATE ${productsTableRef}
+          SET
+            name = $2,
+            price = $3,
+            category = $4,
+            images = $5::jsonb,
+            display_order = $6,
+            badge = $7,
+            description = $8,
+            details = $9::jsonb,
+            updated_at = $10
+          WHERE id = $1
+          RETURNING
+            ${getPostgresProductsSelectClause()}
+        `,
+        [
+          productId,
+          product.name,
+          product.price,
+          product.category,
+          JSON.stringify(product.imageAssets),
+          product.displayOrder,
+          product.badge,
+          product.description,
+          JSON.stringify(product.details),
+          product.updatedAt,
+        ],
+      );
+
+      return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
+    }
+
     const result = await pool.query(
       `
         UPDATE ${productsTableRef}
@@ -904,24 +974,13 @@ async function updateProductRecord(productId, product) {
           price = $3,
           category = $4,
           images = $5::jsonb,
-          display_order = $6,
-          badge = $7,
-          description = $8,
-          details = $9::jsonb,
-          updated_at = $10
+          badge = $6,
+          description = $7,
+          details = $8::jsonb,
+          updated_at = $9
         WHERE id = $1
         RETURNING
-          id,
-          name,
-          price::float8 AS price,
-          category,
-          images,
-          display_order AS "displayOrder",
-          badge,
-          description,
-          details,
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          ${getPostgresProductsSelectClause()}
       `,
       [
         productId,
@@ -929,7 +988,6 @@ async function updateProductRecord(productId, product) {
         product.price,
         product.category,
         JSON.stringify(product.imageAssets),
-        product.displayOrder,
         product.badge,
         product.description,
         JSON.stringify(product.details),
@@ -937,7 +995,15 @@ async function updateProductRecord(productId, product) {
       ],
     );
 
-    return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
+    return result.rows[0]
+      ? normalizeProduct(
+          {
+            ...result.rows[0],
+            displayOrder: product.displayOrder,
+          },
+          product.displayOrder,
+        )
+      : null;
   }
 
   await db.read();
@@ -955,43 +1021,47 @@ async function updateProductRecord(productId, product) {
 async function deleteProductRecord(productId) {
   if (USE_POSTGRES) {
     const productsTableRef = getProductsTableRef();
-    const client = await pool.connect();
+    if (postgresDisplayOrderAvailable) {
+      const client = await pool.connect();
 
-    try {
-      await client.query('BEGIN');
+      try {
+        await client.query('BEGIN');
 
-      const result = await client.query(
-        `
-          DELETE FROM ${productsTableRef}
-          WHERE id = $1
-          RETURNING
-            id,
-            name,
-            price::float8 AS price,
-            category,
-            images,
-            display_order AS "displayOrder",
-            badge,
-            description,
-            details,
-            created_at AS "createdAt",
-            updated_at AS "updatedAt"
-        `,
-        [productId],
-      );
+        const result = await client.query(
+          `
+            DELETE FROM ${productsTableRef}
+            WHERE id = $1
+            RETURNING
+              ${getPostgresProductsSelectClause()}
+          `,
+          [productId],
+        );
 
-      if (result.rows[0]) {
-        await compactPostgresDisplayOrder(client);
+        if (result.rows[0]) {
+          await compactPostgresDisplayOrder(client);
+        }
+
+        await client.query('COMMIT');
+        return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
       }
-
-      await client.query('COMMIT');
-      return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
     }
+
+    const result = await pool.query(
+      `
+        DELETE FROM ${productsTableRef}
+        WHERE id = $1
+        RETURNING
+          ${getPostgresProductsSelectClause()}
+      `,
+      [productId],
+    );
+
+    return result.rows[0] ? normalizeProduct(result.rows[0]) : null;
   }
 
   await db.read();
@@ -1007,6 +1077,14 @@ async function deleteProductRecord(productId) {
 }
 
 async function reorderProductRecords(productIds) {
+  if (USE_POSTGRES && !postgresDisplayOrderAvailable) {
+    const error = new Error(
+      'A tabela atual ainda nao tem a coluna display_order. Rode a migracao com um owner do banco para liberar a reordenacao.',
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
   const normalizedProductIds = [...new Set(productIds.map((productId) => String(productId).trim()).filter(Boolean))];
 
   if (normalizedProductIds.length === 0) {
